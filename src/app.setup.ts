@@ -1,5 +1,6 @@
 import {
   INestApplication,
+  RequestMethod,
   ValidationPipe,
   VersioningType,
 } from '@nestjs/common';
@@ -22,7 +23,10 @@ export function setupApp(app: INestApplication): void {
   app.use(helmet());
   app.use(loggerMiddleware);
 
-  app.setGlobalPrefix(process.env.APP_PREFIX ?? 'api/v1');
+  app.setGlobalPrefix(process.env.APP_PREFIX ?? 'api/v1', {
+    // Keep the root path unprefixed so it can redirect to the Swagger docs.
+    exclude: [{ path: '/', method: RequestMethod.GET }],
+  });
   app.enableVersioning({ type: VersioningType.URI });
 
   app.useGlobalGuards(new JwtAuthGuard(reflector), new RolesGuard(reflector));

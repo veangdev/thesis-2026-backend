@@ -35,6 +35,11 @@ describe('Auth & RBAC (e2e)', () => {
     await app.close();
   });
 
+  it('redirects the root path to the Swagger docs', async () => {
+    const res = await request(httpServer).get('/').expect(302);
+    expect(res.headers.location).toBe('/docs');
+  });
+
   it('GET /health is public and reports ok', async () => {
     const res = await request(httpServer).get(`${PREFIX}/health`).expect(200);
     expect(res.body.success).toBe(true);
