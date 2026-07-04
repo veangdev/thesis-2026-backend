@@ -213,6 +213,137 @@ describe('Assessment lifecycle (e2e)', () => {
     expect(completed.body.scores[0].coachingRecommended).toBe(true);
   });
 
+  it('exposes gap analytics (self vs mentor) for the assessment', async () => {
+    const res = await request(server)
+      .get(`${PREFIX}/analytics/gap/${assessmentId}`)
+      .set(asCoordinator())
+      .expect(200);
+    expect(res.body.studentId).toBe(studentId);
+    expect(res.body.dimensions[0].selfScore).toBe(4);
+    expect(res.body.dimensions[0].mentorScore).toBe(2);
+    expect(res.body.dimensions[0].selfMentorGap).toBe(-2);
+  });
+
+  it('computes student analytics with a needs-support zone', async () => {
+    const res = await request(server)
+      .get(`${PREFIX}/analytics/student/${studentId}`)
+      .set(asCoordinator())
+      .expect(200);
+    expect(res.body.scaleMax).toBe(5);
+    expect(res.body.periods).toHaveLength(1);
+    expect(res.body.latest.zones[0].zone).toBe('needs_support');
+  });
+
+  it('lists the student as at-risk in cohort analytics', async () => {
+    const res = await request(server)
+      .get(`${PREFIX}/analytics/cohort/${cohortId}`)
+      .set(asCoordinator())
+      .expect(200);
+    const body = res.body as {
+      atRiskStudents: { studentId: string }[];
+      completionRates: { completed: number }[];
+    };
+    expect(body.atRiskStudents.map((s) => s.studentId)).toContain(studentId);
+    expect(body.completionRates[0].completed).toBe(1);
+  });
+
+  it('reports the completed assessment in the coordinator overview', async () => {
+    const res = await request(server)
+      .get(`${PREFIX}/analytics/overview`)
+      .set(asCoordinator())
+      .expect(200);
+    expect(res.body.kpis.completedAssessments).toBeGreaterThanOrEqual(1);
+  });
+
+  it('delivers lifecycle notifications to the student and marks them read', async () => {
+    const studentToken = await login(studentEmail);
+    const list = await request(server)
+      .get(`${PREFIX}/notifications?unread=true`)
+      .set({ Authorization: `Bearer ${studentToken}` })
+      .expect(200);
+    const body = list.body as { data: unknown[] };
+    expect(body.data.length).toBeGreaterThanOrEqual(1);
+
+    const read = await request(server)
+      .patch(`${PREFIX}/notifications/read-all`)
+      .set({ Authorization: `Bearer ${studentToken}` })
+      .expect(200);
+    expect((read.body as { count: number }).count).toBeGreaterThanOrEqual(1);
+  });
+
+  it('lets a student create and list a personal goal', async () => {
+    const studentToken = await login(studentEmail);
+    const created = await request(server)
+      .post(`${PREFIX}/goals`)
+      .set({ Authorization: `Bearer ${studentToken}` })
+      .send({
+        title: 'Improve communication',
+        targetDimensionId: dimensionId,
+        progressPercent: 10,
+        milestones: [{ title: 'Join debate club' }],
+      })
+      .expect(201);
+    expect((created.body as { studentId: string }).studentId).toBe(studentId);
+
+    const list = await request(server)
+      .get(`${PREFIX}/goals`)
+      .set({ Authorization: `Bearer ${studentToken}` })
+      .expect(200);
+    expect(
+      (list.body as { data: unknown[] }).data.length,
+    ).toBeGreaterThanOrEqual(1);
+  });
+
+  it('lets a facilitator schedule a coaching session with an action item', async () => {
+    const facilitatorToken = await login(facilitatorEmail);
+    const session = await request(server)
+      .post(`${PREFIX}/coaching-sessions`)
+      .set({ Authorization: `Bearer ${facilitatorToken}` })
+      .send({
+        title: '1:1 Communication coaching',
+        scope: 'individual',
+        scheduledAt: '2026-07-10T09:00:00.000Z',
+        participantIds: [studentId],
+        targetDimensionIds: [dimensionId],
+      })
+      .expect(201);
+    const sessionBody = session.body as {
+      id: string;
+      participants: unknown[];
+    };
+    expect(sessionBody.participants).toHaveLength(1);
+
+    await request(server)
+      .post(`${PREFIX}/coaching-sessions/${sessionBody.id}/action-items`)
+      .set({ Authorization: `Bearer ${facilitatorToken}` })
+      .send({ description: 'Practise the opening two minutes' })
+      .expect(201);
+
+    const list = await request(server)
+      .get(`${PREFIX}/coaching-sessions`)
+      .set({ Authorization: `Bearer ${facilitatorToken}` })
+      .expect(200);
+    expect(
+      (list.body as { data: unknown[] }).data.length,
+    ).toBeGreaterThanOrEqual(1);
+  });
+
+  it('records coordinator mutations in the audit log', async () => {
+    await request(server)
+      .post(`${PREFIX}/goals`)
+      .set(asCoordinator())
+      .send({ title: 'Coordinator-set goal', studentId })
+      .expect(201);
+
+    const logs = await request(server)
+      .get(`${PREFIX}/audit-logs`)
+      .set(asCoordinator())
+      .expect(200);
+    const body = logs.body as { data: { entity: string }[] };
+    expect(body.data.length).toBeGreaterThanOrEqual(1);
+    expect(body.data.some((l) => l.entity === 'Goal')).toBe(true);
+  });
+
   it('forbids a student from another student’s assessment scope', async () => {
     const studentToken = await login(studentEmail);
     // A facilitator-only action must be rejected for a self_assessor.
