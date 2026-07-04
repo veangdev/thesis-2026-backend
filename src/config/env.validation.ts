@@ -78,5 +78,17 @@ export function validateEnv(
     throw new Error(`Invalid environment configuration: ${details}`);
   }
 
+  // Never allow the shipped placeholder secrets to reach production.
+  if (validated.NODE_ENV === Environment.Production) {
+    const placeholders = (['JWT_SECRET', 'JWT_REFRESH_SECRET'] as const).filter(
+      (key) => /change-me/i.test(validated[key]),
+    );
+    if (placeholders.length > 0) {
+      throw new Error(
+        `Refusing to start in production with placeholder secrets: ${placeholders.join(', ')}`,
+      );
+    }
+  }
+
   return validated;
 }

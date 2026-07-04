@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Delete,
+  ForbiddenException,
   Get,
   HttpCode,
   HttpStatus,
@@ -21,7 +22,9 @@ import {
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
 import { Roles } from '../../common/decorators/roles.decorator';
+import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Role } from '../../common/enums';
+import { AuthenticatedUser } from '../../common/interfaces';
 import { UsersService } from './users.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
@@ -69,7 +72,14 @@ export class UsersController {
   @Get(':id')
   @ApiOperation({ summary: 'Get a single user by id' })
   @ApiOkResponse({ type: UserResponseDto })
-  findOne(@Param('id') id: string): Promise<UserResponseDto> {
+  findOne(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<UserResponseDto> {
+    // Staff may read any user; a self-assessor only their own record.
+    if (user.role === Role.self_assessor && user.id !== id) {
+      throw new ForbiddenException('Cannot access another user’s record');
+    }
     return this.usersService.findOne(id);
   }
 

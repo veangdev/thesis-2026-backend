@@ -1,17 +1,23 @@
 import { INestApplication } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import request from 'supertest';
+import { PrismaPg } from '@prisma/adapter-pg';
+import * as bcrypt from 'bcryptjs';
 import { AppModule } from '../src/app.module';
 import { setupApp } from '../src/app.setup';
+import { PrismaClient } from '../generated/prisma/client';
 
 const PREFIX = '/api/v1';
 
 describe('Auth & RBAC (e2e)', () => {
   let app: INestApplication;
   let httpServer: ReturnType<INestApplication['getHttpServer']>;
+  const prisma = new PrismaClient({
+    adapter: new PrismaPg(process.env.DATABASE_URL as string),
+  });
 
   const unique = Date.now();
-  const newUser = {
+  const user = {
     name: 'E2E User',
     email: `e2e-${unique}@pnc.edu`,
     password: 'password123',
@@ -29,9 +35,20 @@ describe('Auth & RBAC (e2e)', () => {
     setupApp(app);
     await app.init();
     httpServer = app.getHttpServer();
+
+    // Users are provisioned by a coordinator; bootstrap a self-assessor directly.
+    await prisma.user.create({
+      data: {
+        name: user.name,
+        email: user.email,
+        passwordHash: await bcrypt.hash(user.password, 4),
+        role: 'self_assessor',
+      },
+    });
   });
 
   afterAll(async () => {
+    await prisma.$disconnect();
     await app.close();
   });
 
@@ -45,9 +62,9 @@ describe('Auth & RBAC (e2e)', () => {
     expect(res.body.status).toBe('ok');
   });
 
-  it('rejects registration with invalid payload (400 envelope)', async () => {
+  it('rejects login with an invalid payload (400 envelope)', async () => {
     const res = await request(httpServer)
-      .post(`${PREFIX}/auth/register`)
+      .post(`${PREFIX}/auth/login`)
       .send({ email: 'not-an-email', password: 'short' })
       .expect(400);
     expect(res.body.statusCode).toBe(400);
@@ -55,24 +72,14 @@ describe('Auth & RBAC (e2e)', () => {
     expect(Array.isArray(res.body.message)).toBe(true);
   });
 
-  it('registers a new user and returns tokens (no password leak)', async () => {
+  it('logs in and returns tokens (no password leak)', async () => {
     const res = await request(httpServer)
-      .post(`${PREFIX}/auth/register`)
-      .send(newUser)
-      .expect(201);
+      .post(`${PREFIX}/auth/login`)
+      .send({ email: user.email, password: user.password })
+      .expect(200);
     expect(res.body.accessToken).toBeDefined();
     expect(res.body.refreshToken).toBeDefined();
     expect(res.body.user).not.toHaveProperty('passwordHash');
-    accessToken = res.body.accessToken;
-    refreshToken = res.body.refreshToken;
-  });
-
-  it('logs in with the new credentials', async () => {
-    const res = await request(httpServer)
-      .post(`${PREFIX}/auth/login`)
-      .send({ email: newUser.email, password: newUser.password })
-      .expect(200);
-    expect(res.body.accessToken).toBeDefined();
     accessToken = res.body.accessToken;
     refreshToken = res.body.refreshToken;
   });
@@ -93,7 +100,7 @@ describe('Auth & RBAC (e2e)', () => {
       .get(`${PREFIX}/auth/me`)
       .set('Authorization', `Bearer ${accessToken}`)
       .expect(200);
-    expect(res.body.email).toBe(newUser.email);
+    expect(res.body.email).toBe(user.email);
     expect(res.body.role).toBe('self_assessor');
     expect(res.body).not.toHaveProperty('passwordHash');
   });

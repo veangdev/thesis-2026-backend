@@ -1,5 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { APP_GUARD } from '@nestjs/core';
+import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import configuration from './config/configuration';
 import { validateEnv } from './config/env.validation';
 import { AppController } from './app.controller';
@@ -26,6 +28,12 @@ import { AuditModule } from './modules/audit/audit.module';
       validate: validateEnv,
       envFilePath: '.env',
     }),
+    // Generous global rate limit; auth routes tighten it further. Disabled
+    // under tests so rapid sequential requests don't trip the limiter.
+    ThrottlerModule.forRoot({
+      throttlers: [{ ttl: 60_000, limit: 100 }],
+      skipIf: () => process.env.NODE_ENV === 'test',
+    }),
     PrismaModule,
     AuthModule,
     UsersModule,
@@ -42,5 +50,6 @@ import { AuditModule } from './modules/audit/audit.module';
     AuditModule,
   ],
   controllers: [AppController],
+  providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
 })
 export class AppModule {}

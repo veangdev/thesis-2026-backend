@@ -6,7 +6,6 @@ import { createHash, randomUUID } from 'crypto';
 import { UsersService } from '../users/users.service';
 import { RefreshTokenRepository } from './refresh-token.repository';
 import { LoginDto } from './dto/login.dto';
-import { RegisterDto } from './dto/register.dto';
 import { Role } from '../../common/enums';
 import { AuthenticatedUser } from '../../common/interfaces';
 
@@ -44,20 +43,16 @@ export class AuthService {
     private readonly refreshTokens: RefreshTokenRepository,
   ) {}
 
-  async register(dto: RegisterDto): Promise<AuthResult> {
-    const user = await this.usersService.create({
-      ...dto,
-      role: Role.self_assessor,
-    });
-    return this.issueTokens(user);
-  }
-
   async login(dto: LoginDto): Promise<AuthResult> {
     const user = await this.usersService.findByEmail(dto.email);
     if (!user) throw new UnauthorizedException('Invalid credentials');
 
     const passwordMatch = await bcrypt.compare(dto.password, user.passwordHash);
     if (!passwordMatch) throw new UnauthorizedException('Invalid credentials');
+
+    if (!user.isActive) {
+      throw new UnauthorizedException('Account is disabled');
+    }
 
     const { passwordHash: _passwordHash, ...safeUser } = user;
     void _passwordHash;

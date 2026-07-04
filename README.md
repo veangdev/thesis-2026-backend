@@ -222,7 +222,6 @@ POST   /auth/login             (public)  → { accessToken, refreshToken, user }
 POST   /auth/refresh           (public)  → { accessToken }
 POST   /auth/forgot-password   (public)  → 204 (reset token logged in dev)
 POST   /auth/reset-password    (public)  → 204
-POST   /auth/register          (public)  → self-assessor signup
 GET    /auth/me                          → current user
 POST   /auth/logout                      → revoke refresh tokens
 

@@ -99,20 +99,17 @@ describe('AuthService', () => {
     });
   });
 
-  describe('register', () => {
-    it('creates a self_assessor and issues tokens', async () => {
-      usersService.create.mockResolvedValue(safeUser);
-
-      const result = await service.register({
-        name: 'Jane',
-        email: safeUser.email,
-        password: 'password123',
+  describe('login', () => {
+    it('rejects a disabled account', async () => {
+      const passwordHash = await bcrypt.hash('password123', 4);
+      usersService.findByEmail.mockResolvedValue({
+        ...safeUser,
+        isActive: false,
+        passwordHash,
       });
-
-      expect(usersService.create).toHaveBeenCalledWith(
-        expect.objectContaining({ role: Role.self_assessor }),
-      );
-      expect(result.accessToken).toBe('access-token');
+      await expect(
+        service.login({ email: safeUser.email, password: 'password123' }),
+      ).rejects.toThrow(UnauthorizedException);
     });
   });
 
