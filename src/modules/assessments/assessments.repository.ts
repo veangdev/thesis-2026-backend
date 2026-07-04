@@ -1,10 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
-import {
-  Assessment,
-  AssessmentScore,
-  Prisma,
-} from '../../../generated/prisma/client';
+import { Assessment, Prisma } from '../../../generated/prisma/client';
 
 const SAFE_USER_SELECT = {
   id: true,
@@ -51,20 +47,25 @@ export class AssessmentsRepository {
     return new Set(rows.map((row) => row.studentId));
   }
 
-  createDraft(
-    studentId: string,
+  /** Atomically create draft assessments (one per student) for a period. */
+  async createDrafts(
     periodId: string,
+    studentIds: string[],
     dimensionIds: string[],
-  ): Promise<Assessment> {
-    return this.prisma.assessment.create({
-      data: {
-        studentId,
-        periodId,
-        scores: {
-          create: dimensionIds.map((dimensionId) => ({ dimensionId })),
-        },
-      },
-    });
+  ): Promise<void> {
+    await this.prisma.$transaction(
+      studentIds.map((studentId) =>
+        this.prisma.assessment.create({
+          data: {
+            studentId,
+            periodId,
+            scores: {
+              create: dimensionIds.map((dimensionId) => ({ dimensionId })),
+            },
+          },
+        }),
+      ),
+    );
   }
 
   findById(id: string): Promise<AssessmentWithRelations | null> {
@@ -92,22 +93,46 @@ export class AssessmentsRepository {
     return this.prisma.assessment.count({ where });
   }
 
-  updateScore(
-    assessmentId: string,
-    dimensionId: string,
-    data: Prisma.AssessmentScoreUncheckedUpdateInput,
-  ): Promise<AssessmentScore> {
-    return this.prisma.assessmentScore.update({
-      where: { assessmentId_dimensionId: { assessmentId, dimensionId } },
-      data,
-    });
-  }
-
   setStatus(
     id: string,
     data: Prisma.AssessmentUncheckedUpdateInput,
   ): Promise<Assessment> {
     return this.prisma.assessment.update({ where: { id }, data });
+  }
+
+  /**
+   * Atomically apply per-dimension score updates and (optionally) an assessment
+   * status change in a single transaction, so a mid-way failure can't leave the
+   * assessment in a partially-updated state.
+   */
+  async applyScoreUpdates(
+    assessmentId: string,
+    updates: {
+      dimensionId: string;
+      data: Prisma.AssessmentScoreUncheckedUpdateInput;
+    }[],
+    assessmentData?: Prisma.AssessmentUncheckedUpdateInput,
+  ): Promise<void> {
+    const ops: Prisma.PrismaPromise<unknown>[] = updates.map((u) =>
+      this.prisma.assessmentScore.update({
+        where: {
+          assessmentId_dimensionId: {
+            assessmentId,
+            dimensionId: u.dimensionId,
+          },
+        },
+        data: u.data,
+      }),
+    );
+    if (assessmentData) {
+      ops.push(
+        this.prisma.assessment.update({
+          where: { id: assessmentId },
+          data: assessmentData,
+        }),
+      );
+    }
+    await this.prisma.$transaction(ops);
   }
 
   /** Agreed scores (by dimension) from the student's prior completed period. */

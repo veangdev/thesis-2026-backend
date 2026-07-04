@@ -175,22 +175,31 @@ export class AnalyticsService {
   async cohort(cohortId: string): Promise<CohortAnalytics> {
     const cohort = await this.cohortsService.findOne(cohortId);
     const scaleMax = cohort.scoringScaleMax;
-    const assessments =
-      await this.analyticsRepository.assessmentsForCohort(cohortId);
 
-    const dimensionNames = new Map<string, string>();
-    for (const a of assessments) {
-      for (const s of a.scores)
-        dimensionNames.set(s.dimensionId, s.dimension.name);
-    }
+    const [dimensions, periods, avgByDimension, periodStatusCounts, completed] =
+      await Promise.all([
+        this.analyticsRepository.dimensionsForCohort(cohortId),
+        this.analyticsRepository.periodsForCohort(cohortId),
+        this.analyticsRepository.avgAgreedByCohortDimension(cohortId),
+        this.analyticsRepository.countsByPeriodStatus(cohortId),
+        this.analyticsRepository.completedForCohort(cohortId),
+      ]);
+
+    const dimensionNames = new Map(dimensions.map((d) => [d.id, d.name]));
 
     return {
       cohortId,
       scaleMax,
-      weakestDimensions: this.weakestDimensions(assessments, dimensionNames),
-      completionRates: this.completionRates(assessments),
-      heatmap: this.heatmap(assessments, dimensionNames),
-      atRiskStudents: this.atRiskStudents(assessments, scaleMax),
+      weakestDimensions: avgByDimension
+        .map((row) => ({
+          dimensionId: row.dimensionId,
+          dimensionName: dimensionNames.get(row.dimensionId) ?? row.dimensionId,
+          average: round2(row._avg.agreedScore ?? 0),
+        }))
+        .sort((x, y) => x.average - y.average),
+      completionRates: this.completionRates(periodStatusCounts, periods),
+      heatmap: this.heatmap(completed, dimensions),
+      atRiskStudents: this.atRiskStudents(completed, scaleMax),
     };
   }
 
@@ -340,62 +349,37 @@ export class AnalyticsService {
       }));
   }
 
-  private weakestDimensions(
-    assessments: AssessmentForCohort[],
-    names: Map<string, string>,
-  ): CohortAnalytics['weakestDimensions'] {
-    const buckets = new Map<string, number[]>();
-    for (const a of assessments) {
-      if (a.status !== 'completed') continue;
-      for (const s of a.scores) {
-        if (s.agreedScore === null) continue;
-        const list = buckets.get(s.dimensionId) ?? [];
-        list.push(s.agreedScore);
-        buckets.set(s.dimensionId, list);
-      }
-    }
-    return [...buckets.entries()]
-      .map(([dimensionId, values]) => ({
-        dimensionId,
-        dimensionName: names.get(dimensionId) ?? dimensionId,
-        average: average(values),
-      }))
-      .sort((x, y) => x.average - y.average);
-  }
-
   private completionRates(
-    assessments: AssessmentForCohort[],
+    counts: Array<{
+      periodId: string;
+      status: string;
+      _count: { _all: number };
+    }>,
+    periods: Array<{ id: string; name: string }>,
   ): CohortAnalytics['completionRates'] {
-    const byPeriod = new Map<
-      string,
-      { periodName: string; total: number; completed: number }
-    >();
-    for (const a of assessments) {
-      const entry = byPeriod.get(a.periodId) ?? {
-        periodName: a.period.name,
-        total: 0,
-        completed: 0,
-      };
-      entry.total += 1;
-      if (a.status === 'completed') entry.completed += 1;
-      byPeriod.set(a.periodId, entry);
+    const names = new Map(periods.map((p) => [p.id, p.name]));
+    const byPeriod = new Map<string, { total: number; completed: number }>();
+    for (const row of counts) {
+      const entry = byPeriod.get(row.periodId) ?? { total: 0, completed: 0 };
+      entry.total += row._count._all;
+      if (row.status === 'completed') entry.completed += row._count._all;
+      byPeriod.set(row.periodId, entry);
     }
     return [...byPeriod.entries()].map(([periodId, e]) => ({
       periodId,
-      periodName: e.periodName,
+      periodName: names.get(periodId) ?? periodId,
       total: e.total,
       completed: e.completed,
       rate: e.total > 0 ? round2(e.completed / e.total) : 0,
     }));
   }
 
-  /** Each student's most recent completed assessment, as a score grid. */
+  /** Each student's most recent completed assessment (input is completed-only). */
   private latestCompletedByStudent(
     assessments: AssessmentForCohort[],
   ): Map<string, AssessmentForCohort> {
     const latest = new Map<string, AssessmentForCohort>();
     for (const a of assessments) {
-      if (a.status !== 'completed') continue;
       // assessments arrive ordered by period.startDate asc, so the last wins.
       latest.set(a.studentId, a);
     }
@@ -404,9 +388,9 @@ export class AnalyticsService {
 
   private heatmap(
     assessments: AssessmentForCohort[],
-    names: Map<string, string>,
+    dimensions: Array<{ id: string }>,
   ): CohortAnalytics['heatmap'] {
-    const dimensionIds = [...names.keys()];
+    const dimensionIds = dimensions.map((d) => d.id);
     const latest = this.latestCompletedByStudent(assessments);
     return [...latest.values()].map((a) => {
       const scoreByDim = new Map(

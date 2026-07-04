@@ -4,7 +4,6 @@ import { GoalsService } from './goals.service';
 import { GoalsRepository } from './goals.repository';
 import { UsersService } from '../users/users.service';
 import { AssignmentsService } from '../assignments/assignments.service';
-import { AuditService } from '../audit/audit.service';
 import { Role } from '../../common/enums';
 import { AuthenticatedUser } from '../../common/interfaces';
 
@@ -27,7 +26,6 @@ describe('GoalsService', () => {
     studentIdsForFacilitator: jest.fn(),
     isAssigned: jest.fn(),
   };
-  const auditService = { record: jest.fn() };
 
   beforeEach(async () => {
     jest.clearAllMocks();
@@ -37,14 +35,13 @@ describe('GoalsService', () => {
         { provide: GoalsRepository, useValue: repo },
         { provide: UsersService, useValue: usersService },
         { provide: AssignmentsService, useValue: assignmentsService },
-        { provide: AuditService, useValue: auditService },
       ],
     }).compile();
     service = moduleRef.get(GoalsService);
   });
 
   describe('create', () => {
-    it('forces the student to self and does not audit for a self-assessor', async () => {
+    it('forces the student to self for a self-assessor', async () => {
       usersService.findOne.mockResolvedValue({ id: 's1' });
       repo.create.mockResolvedValue({ id: 'g1', studentId: 's1' });
 
@@ -56,7 +53,6 @@ describe('GoalsService', () => {
       expect(repo.create).toHaveBeenCalledWith(
         expect.objectContaining({ studentId: 's1' }),
       );
-      expect(auditService.record).not.toHaveBeenCalled();
     });
 
     it('requires a studentId when a coordinator creates a goal', async () => {
@@ -68,7 +64,7 @@ describe('GoalsService', () => {
       ).rejects.toThrow(BadRequestException);
     });
 
-    it('audits a coordinator-created goal', async () => {
+    it('creates for the given student when a coordinator supplies one', async () => {
       usersService.findOne.mockResolvedValue({ id: 's2' });
       repo.create.mockResolvedValue({ id: 'g2', studentId: 's2' });
 
@@ -77,8 +73,8 @@ describe('GoalsService', () => {
         asUser('c1', Role.program_coordinator),
       );
 
-      expect(auditService.record).toHaveBeenCalledWith(
-        expect.objectContaining({ entity: 'Goal', action: 'create' }),
+      expect(repo.create).toHaveBeenCalledWith(
+        expect.objectContaining({ studentId: 's2' }),
       );
     });
   });

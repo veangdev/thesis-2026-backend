@@ -26,7 +26,7 @@ export default (): AppConfig => ({
     refreshExpiresIn: process.env.JWT_REFRESH_EXPIRES_IN ?? '7d',
   },
   cors: {
-    origins: (process.env.CORS_ORIGIN ?? 'http://localhost:5173')
+    origins: (process.env.CORS_ORIGIN ?? 'http://localhost:3000')
       .split(',')
       .map((origin) => origin.trim())
       .filter(Boolean),

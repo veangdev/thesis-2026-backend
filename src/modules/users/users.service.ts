@@ -49,17 +49,19 @@ export class UsersService {
     );
   }
 
-  /** Bulk-create users, optionally adding each to a cohort in one call. */
+  /** Bulk-create users, optionally adding each to a cohort — atomic. */
   async createMany(dto: BulkCreateUsersDto): Promise<AuthenticatedUser[]> {
-    const created: AuthenticatedUser[] = [];
-    for (const userDto of dto.users) {
-      const user = await this.create(userDto);
-      if (dto.cohortId) {
-        await this.usersRepository.addToCohort(user.id, dto.cohortId);
-      }
-      created.push(user);
-    }
-    return created;
+    const records = await Promise.all(
+      dto.users.map(async ({ password, ...rest }) => ({
+        ...rest,
+        passwordHash: await bcrypt.hash(password, SALT_ROUNDS),
+      })),
+    );
+    const created = await this.usersRepository.createMany(
+      records,
+      dto.cohortId,
+    );
+    return created.map((user) => this.sanitize(user));
   }
 
   private buildWhere(query: UserQueryDto): Prisma.UserWhereInput {

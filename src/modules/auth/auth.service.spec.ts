@@ -31,6 +31,7 @@ describe('AuthService', () => {
     findValidByUser: jest.fn(),
     revoke: jest.fn(),
     revokeAllForUser: jest.fn(),
+    pruneForUser: jest.fn(),
   };
 
   const safeUser = {

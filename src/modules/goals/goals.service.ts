@@ -7,7 +7,6 @@ import {
 import { GoalsRepository } from './goals.repository';
 import { UsersService } from '../users/users.service';
 import { AssignmentsService } from '../assignments/assignments.service';
-import { AuditService } from '../audit/audit.service';
 import { CreateGoalDto } from './dto/create-goal.dto';
 import { UpdateGoalDto } from './dto/update-goal.dto';
 import { GoalQueryDto } from './dto/goal-query.dto';
@@ -24,7 +23,6 @@ export class GoalsService {
     private readonly goalsRepository: GoalsRepository,
     private readonly usersService: UsersService,
     private readonly assignmentsService: AssignmentsService,
-    private readonly auditService: AuditService,
   ) {}
 
   async create(dto: CreateGoalDto, user: AuthenticatedUser): Promise<Goal> {
@@ -41,7 +39,6 @@ export class GoalsService {
       milestones: this.toJson(dto.milestones),
     });
 
-    await this.audit(user, 'create', goal.id);
     return goal;
   }
 
@@ -87,7 +84,6 @@ export class GoalsService {
     if (dto.milestones) data.milestones = this.toJson(dto.milestones);
 
     const updated = await this.goalsRepository.update(id, data);
-    await this.audit(user, 'update', id);
     return updated;
   }
 
@@ -95,7 +91,6 @@ export class GoalsService {
     const goal = await this.getOrThrow(id);
     this.assertCanModify(goal, user);
     await this.goalsRepository.delete(id);
-    await this.audit(user, 'delete', id);
   }
 
   // ─────────────────────────── Helpers ───────────────────────────
@@ -167,19 +162,5 @@ export class GoalsService {
     return milestones === undefined
       ? undefined
       : (milestones as Prisma.InputJsonValue);
-  }
-
-  private async audit(
-    user: AuthenticatedUser,
-    action: string,
-    entityId: string,
-  ): Promise<void> {
-    if (user.role !== Role.program_coordinator) return;
-    await this.auditService.record({
-      actorId: user.id,
-      action,
-      entity: 'Goal',
-      entityId,
-    });
   }
 }

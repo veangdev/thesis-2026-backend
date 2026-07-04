@@ -38,8 +38,27 @@ export class UsersRepository extends BaseRepository<
     return this.prisma.user.count({ where });
   }
 
-  addToCohort(userId: string, cohortId: string): Promise<unknown> {
-    return this.prisma.cohortMember.create({ data: { userId, cohortId } });
+  /**
+   * Create many users (optionally enrolling each into a cohort) atomically — a
+   * duplicate email or any other failure rolls the whole batch back.
+   */
+  createMany(
+    records: Prisma.UserCreateInput[],
+    cohortId?: string,
+  ): Promise<User[]> {
+    return this.prisma.$transaction(async (tx) => {
+      const created: User[] = [];
+      for (const data of records) {
+        const user = await tx.user.create({ data });
+        if (cohortId) {
+          await tx.cohortMember.create({
+            data: { userId: user.id, cohortId },
+          });
+        }
+        created.push(user);
+      }
+      return created;
+    });
   }
 
   findById(id: string): Promise<User | null> {

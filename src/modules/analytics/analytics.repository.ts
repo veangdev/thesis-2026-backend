@@ -47,11 +47,52 @@ export class AnalyticsRepository {
     });
   }
 
-  assessmentsForCohort(cohortId: string): Promise<AssessmentForCohort[]> {
+  /** Completed assessments only — used for the heatmap and at-risk detection. */
+  completedForCohort(cohortId: string): Promise<AssessmentForCohort[]> {
     return this.prisma.assessment.findMany({
-      where: { period: { cohortId } },
+      where: { period: { cohortId }, status: 'completed' },
       include: WITH_SCORES_AND_STUDENT,
       orderBy: { period: { startDate: 'asc' } },
+    });
+  }
+
+  /** Average agreed score per dimension across completed assessments (SQL-side). */
+  avgAgreedByCohortDimension(cohortId: string) {
+    return this.prisma.assessmentScore.groupBy({
+      by: ['dimensionId'],
+      where: {
+        agreedScore: { not: null },
+        assessment: { status: 'completed', period: { cohortId } },
+      },
+      _avg: { agreedScore: true },
+    });
+  }
+
+  /** Assessment counts per period+status, for completion rates (SQL-side). */
+  countsByPeriodStatus(cohortId: string) {
+    return this.prisma.assessment.groupBy({
+      by: ['periodId', 'status'],
+      where: { period: { cohortId } },
+      _count: { _all: true },
+    });
+  }
+
+  dimensionsForCohort(
+    cohortId: string,
+  ): Promise<Array<{ id: string; name: string; order: number }>> {
+    return this.prisma.dimension.findMany({
+      where: { cohortId },
+      select: { id: true, name: true, order: true },
+      orderBy: { order: 'asc' },
+    });
+  }
+
+  periodsForCohort(
+    cohortId: string,
+  ): Promise<Array<{ id: string; name: string }>> {
+    return this.prisma.assessmentPeriod.findMany({
+      where: { cohortId },
+      select: { id: true, name: true },
     });
   }
 

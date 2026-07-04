@@ -339,9 +339,11 @@ describe('Assessment lifecycle (e2e)', () => {
       .get(`${PREFIX}/audit-logs`)
       .set(asCoordinator())
       .expect(200);
-    const body = logs.body as { data: { entity: string }[] };
+    const body = logs.body as { data: { entity: string; action: string }[] };
     expect(body.data.length).toBeGreaterThanOrEqual(1);
-    expect(body.data.some((l) => l.entity === 'Goal')).toBe(true);
+    expect(
+      body.data.some((l) => l.entity === 'goals' && l.action === 'POST'),
+    ).toBe(true);
   });
 
   it('forbids a student from another student’s assessment scope', async () => {

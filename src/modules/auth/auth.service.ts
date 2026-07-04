@@ -158,6 +158,8 @@ export class AuthService {
       tokenHash: this.hashToken(refreshToken),
       expiresAt: new Date(decoded.exp * 1000),
     });
+    // Opportunistically clear this user's spent tokens.
+    await this.refreshTokens.pruneForUser(user.id);
 
     return { accessToken, refreshToken, user };
   }

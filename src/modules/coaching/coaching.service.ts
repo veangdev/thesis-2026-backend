@@ -8,7 +8,6 @@ import {
   CoachingRepository,
   SessionWithRelations,
 } from './coaching.repository';
-import { AuditService } from '../audit/audit.service';
 import { CreateCoachingSessionDto } from './dto/create-coaching-session.dto';
 import { UpdateCoachingSessionDto } from './dto/update-coaching-session.dto';
 import {
@@ -23,10 +22,7 @@ import { ActionItem, Prisma } from '../../../generated/prisma/client';
 
 @Injectable()
 export class CoachingService {
-  constructor(
-    private readonly coachingRepository: CoachingRepository,
-    private readonly auditService: AuditService,
-  ) {}
+  constructor(private readonly coachingRepository: CoachingRepository) {}
 
   async create(
     dto: CreateCoachingSessionDto,
@@ -45,7 +41,6 @@ export class CoachingService {
       dimensionIds: dto.targetDimensionIds ?? [],
     });
 
-    await this.audit(user, 'create', session.id);
     return session;
   }
 
@@ -94,7 +89,6 @@ export class CoachingService {
     if (dto.scheduledAt) data.scheduledAt = new Date(dto.scheduledAt);
 
     const updated = await this.coachingRepository.update(id, data);
-    await this.audit(user, 'update', id);
     return updated;
   }
 
@@ -102,7 +96,6 @@ export class CoachingService {
     const session = await this.getOrThrow(id);
     this.assertCanManage(session, user);
     await this.coachingRepository.delete(id);
-    await this.audit(user, 'delete', id);
   }
 
   async addActionItem(
@@ -218,19 +211,5 @@ export class CoachingService {
       return;
     }
     throw new ForbiddenException('You cannot manage this coaching session');
-  }
-
-  private async audit(
-    user: AuthenticatedUser,
-    action: string,
-    entityId: string,
-  ): Promise<void> {
-    if (user.role !== Role.program_coordinator) return;
-    await this.auditService.record({
-      actorId: user.id,
-      action,
-      entity: 'CoachingSession',
-      entityId,
-    });
   }
 }

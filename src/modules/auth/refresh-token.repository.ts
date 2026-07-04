@@ -37,4 +37,14 @@ export class RefreshTokenRepository {
       data: { revokedAt: new Date() },
     });
   }
+
+  /** Delete a user's spent tokens (expired or revoked) to keep the table lean. */
+  pruneForUser(userId: string): Promise<{ count: number }> {
+    return this.prisma.refreshToken.deleteMany({
+      where: {
+        userId,
+        OR: [{ revokedAt: { not: null } }, { expiresAt: { lt: new Date() } }],
+      },
+    });
+  }
 }

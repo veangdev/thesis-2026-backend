@@ -65,13 +65,11 @@ export class AssessmentsService {
     );
     const dimensionIds = dimensions.map((d) => d.id);
 
-    for (const studentId of newStudentIds) {
-      await this.assessmentsRepository.createDraft(
-        studentId,
-        period.id,
-        dimensionIds,
-      );
-    }
+    await this.assessmentsRepository.createDrafts(
+      period.id,
+      newStudentIds,
+      dimensionIds,
+    );
 
     await this.notificationsService.notifyMany(newStudentIds, {
       type: NotificationType.assessment_reminder,
@@ -146,19 +144,23 @@ export class AssessmentsService {
     const scaleMax = await this.scaleMaxFor(assessment.period.cohortId);
     const dimensionIds = new Set(assessment.scores.map((s) => s.dimensionId));
 
-    for (const item of dto.scores) {
+    const updates = dto.scores.map((item) => {
       if (!dimensionIds.has(item.dimensionId)) {
         throw new BadRequestException(
           `Dimension ${item.dimensionId} is not part of this assessment`,
         );
       }
       this.assertInRange(item.selfScore, scaleMax, 'selfScore');
-      await this.assessmentsRepository.updateScore(id, item.dimensionId, {
-        selfScore: item.selfScore,
-        selfReflection: item.selfReflection,
-      });
-    }
+      return {
+        dimensionId: item.dimensionId,
+        data: {
+          selfScore: item.selfScore,
+          selfReflection: item.selfReflection,
+        },
+      };
+    });
 
+    await this.assessmentsRepository.applyScoreUpdates(id, updates);
     return this.findOne(id, user);
   }
 
@@ -218,7 +220,7 @@ export class AssessmentsService {
     const scaleMax = await this.scaleMaxFor(assessment.period.cohortId);
     const dimensionIds = new Set(assessment.scores.map((s) => s.dimensionId));
 
-    for (const item of dto.scores) {
+    const updates = dto.scores.map((item) => {
       if (!dimensionIds.has(item.dimensionId)) {
         throw new BadRequestException(
           `Dimension ${item.dimensionId} is not part of this assessment`,
@@ -226,19 +228,23 @@ export class AssessmentsService {
       }
       this.assertInRange(item.mentorScore, scaleMax, 'mentorScore');
       this.assertInRange(item.agreedScore, scaleMax, 'agreedScore');
-      await this.assessmentsRepository.updateScore(id, item.dimensionId, {
-        mentorScore: item.mentorScore,
-        mentorNote: item.mentorNote,
-        agreedScore: item.agreedScore,
-      });
-    }
+      return {
+        dimensionId: item.dimensionId,
+        data: {
+          mentorScore: item.mentorScore,
+          mentorNote: item.mentorNote,
+          agreedScore: item.agreedScore,
+        },
+      };
+    });
 
-    if (assessment.status === AssessmentStatus.self_submitted) {
-      await this.assessmentsRepository.setStatus(id, {
-        status: AssessmentStatus.mentor_review,
-      });
-    }
+    // First mentor edit moves the assessment into review, in the same transaction.
+    const statusData =
+      assessment.status === AssessmentStatus.self_submitted
+        ? { status: AssessmentStatus.mentor_review }
+        : undefined;
 
+    await this.assessmentsRepository.applyScoreUpdates(id, updates, statusData);
     return this.findOne(id, user);
   }
 
@@ -273,25 +279,22 @@ export class AssessmentsService {
     );
 
     const flagged: string[] = [];
-    for (const score of assessment.scores) {
+    const updates = assessment.scores.map((score) => {
       const agreed = score.agreedScore as number;
       const recommended = isCoachingRecommended(
         agreed,
         scaleMax,
         previous.get(score.dimensionId),
       );
-      await this.assessmentsRepository.updateScore(id, score.dimensionId, {
-        coachingRecommended: recommended,
-      });
-      if (recommended) {
-        const dimension = assessment.scores.find(
-          (s) => s.dimensionId === score.dimensionId,
-        )?.dimension.name;
-        if (dimension) flagged.push(dimension);
-      }
-    }
+      if (recommended) flagged.push(score.dimension.name);
+      return {
+        dimensionId: score.dimensionId,
+        data: { coachingRecommended: recommended },
+      };
+    });
 
-    await this.assessmentsRepository.setStatus(id, {
+    // Flag coaching and complete the assessment atomically.
+    await this.assessmentsRepository.applyScoreUpdates(id, updates, {
       status: AssessmentStatus.completed,
       mentorSubmittedAt: new Date(),
     });
