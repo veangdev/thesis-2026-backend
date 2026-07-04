@@ -21,16 +21,25 @@ export class UsersRepository extends BaseRepository<
     return this.prisma.user.create({ data });
   }
 
-  findAll(params?: { skip?: number; take?: number }): Promise<User[]> {
+  findAll(params?: {
+    skip?: number;
+    take?: number;
+    where?: Prisma.UserWhereInput;
+  }): Promise<User[]> {
     return this.prisma.user.findMany({
+      where: params?.where,
       orderBy: { createdAt: 'desc' },
       skip: params?.skip,
       take: params?.take,
     });
   }
 
-  count(): Promise<number> {
-    return this.prisma.user.count();
+  count(where?: Prisma.UserWhereInput): Promise<number> {
+    return this.prisma.user.count({ where });
+  }
+
+  addToCohort(userId: string, cohortId: string): Promise<unknown> {
+    return this.prisma.cohortMember.create({ data: { userId, cohortId } });
   }
 
   findById(id: string): Promise<User | null> {

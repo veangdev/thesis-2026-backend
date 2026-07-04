@@ -15,13 +15,17 @@ describe('AuthService', () => {
     create: jest.fn(),
     findByEmail: jest.fn(),
     findOne: jest.fn(),
+    updatePassword: jest.fn(),
   };
   const jwtService = {
     signAsync: jest.fn(),
     verifyAsync: jest.fn(),
     decode: jest.fn(),
   };
-  const config = { getOrThrow: jest.fn((key: string) => key) };
+  const config = {
+    getOrThrow: jest.fn((key: string) => key),
+    get: jest.fn((key: string) => (key === 'nodeEnv' ? 'test' : undefined)),
+  };
   const refreshTokens = {
     create: jest.fn(),
     findValidByUser: jest.fn(),
@@ -113,7 +117,7 @@ describe('AuthService', () => {
   });
 
   describe('refresh', () => {
-    it('rotates a valid refresh token', async () => {
+    it('issues a new access token without revoking the refresh token', async () => {
       jwtService.verifyAsync.mockResolvedValue({
         sub: safeUser.id,
         email: safeUser.email,
@@ -130,8 +134,9 @@ describe('AuthService', () => {
 
       const result = await service.refresh(incoming);
 
-      expect(refreshTokens.revoke).toHaveBeenCalledWith('rt-1');
-      expect(result.accessToken).toBe('access-token');
+      expect(result).toEqual({ accessToken: 'access-token' });
+      // The presented refresh token stays valid (non-rotating, per contract).
+      expect(refreshTokens.revoke).not.toHaveBeenCalled();
     });
 
     it('throws when the token is not recognised', async () => {
@@ -158,6 +163,61 @@ describe('AuthService', () => {
     it('revokes all refresh tokens for the user', async () => {
       await service.logout('user-1');
       expect(refreshTokens.revokeAllForUser).toHaveBeenCalledWith('user-1');
+    });
+  });
+
+  describe('forgotPassword', () => {
+    it('signs a reset token for a known email', async () => {
+      usersService.findByEmail.mockResolvedValue({ ...safeUser });
+      await service.forgotPassword(safeUser.email);
+      expect(jwtService.signAsync).toHaveBeenCalledWith(
+        expect.objectContaining({
+          sub: safeUser.id,
+          purpose: 'password_reset',
+        }),
+        expect.any(Object),
+      );
+    });
+
+    it('is a no-op for an unknown email (no account enumeration)', async () => {
+      usersService.findByEmail.mockResolvedValue(null);
+      await service.forgotPassword('nobody@pnc.edu');
+      expect(jwtService.signAsync).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('resetPassword', () => {
+    it('updates the password and revokes sessions for a valid token', async () => {
+      jwtService.verifyAsync.mockResolvedValue({
+        sub: safeUser.id,
+        purpose: 'password_reset',
+      });
+
+      await service.resetPassword('reset-token', 'NewPassword123!');
+
+      expect(usersService.updatePassword).toHaveBeenCalledWith(
+        safeUser.id,
+        'NewPassword123!',
+      );
+      expect(refreshTokens.revokeAllForUser).toHaveBeenCalledWith(safeUser.id);
+    });
+
+    it('throws when the token has the wrong purpose', async () => {
+      jwtService.verifyAsync.mockResolvedValue({
+        sub: safeUser.id,
+        purpose: 'access',
+      });
+      await expect(
+        service.resetPassword('bad', 'NewPassword123!'),
+      ).rejects.toThrow(UnauthorizedException);
+      expect(usersService.updatePassword).not.toHaveBeenCalled();
+    });
+
+    it('throws when the token is invalid', async () => {
+      jwtService.verifyAsync.mockRejectedValue(new Error('bad token'));
+      await expect(
+        service.resetPassword('bad', 'NewPassword123!'),
+      ).rejects.toThrow(UnauthorizedException);
     });
   });
 });

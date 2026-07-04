@@ -88,18 +88,30 @@ describe('Auth & RBAC (e2e)', () => {
       .expect(403);
   });
 
-  it('rotates the refresh token and invalidates the old one', async () => {
+  it('returns the current user from /auth/me', async () => {
+    const res = await request(httpServer)
+      .get(`${PREFIX}/auth/me`)
+      .set('Authorization', `Bearer ${accessToken}`)
+      .expect(200);
+    expect(res.body.email).toBe(newUser.email);
+    expect(res.body.role).toBe('self_assessor');
+    expect(res.body).not.toHaveProperty('passwordHash');
+  });
+
+  it('exchanges a refresh token for a new access token (non-rotating)', async () => {
     const refreshed = await request(httpServer)
       .post(`${PREFIX}/auth/refresh`)
       .send({ refreshToken })
       .expect(200);
     expect(refreshed.body.accessToken).toBeDefined();
+    // Contract: refresh returns only an access token.
+    expect(refreshed.body.refreshToken).toBeUndefined();
 
-    // The original refresh token must no longer be accepted after rotation.
+    // The refresh token remains valid and can be reused.
     await request(httpServer)
       .post(`${PREFIX}/auth/refresh`)
       .send({ refreshToken })
-      .expect(401);
+      .expect(200);
 
     accessToken = refreshed.body.accessToken;
   });
@@ -109,5 +121,12 @@ describe('Auth & RBAC (e2e)', () => {
       .post(`${PREFIX}/auth/logout`)
       .set('Authorization', `Bearer ${accessToken}`)
       .expect(200);
+  });
+
+  it('rejects the refresh token after logout (401)', async () => {
+    await request(httpServer)
+      .post(`${PREFIX}/auth/refresh`)
+      .send({ refreshToken })
+      .expect(401);
   });
 });

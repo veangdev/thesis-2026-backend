@@ -8,12 +8,10 @@ import { UsersRepository } from './users.repository';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { AuthenticatedUser } from '../../common/interfaces';
-import {
-  Paginated,
-  PaginationQueryDto,
-  paginate,
-} from '../../common/dto/pagination.dto';
-import { User } from '../../../generated/prisma/client';
+import { Paginated, paginate } from '../../common/dto/pagination.dto';
+import { UserQueryDto } from './dto/user-query.dto';
+import { BulkCreateUsersDto } from './dto/bulk-create-users.dto';
+import { Prisma, User } from '../../../generated/prisma/client';
 
 const SALT_ROUNDS = 12;
 
@@ -31,17 +29,17 @@ export class UsersService {
     return this.sanitize(user);
   }
 
-  async findAll(
-    pagination: PaginationQueryDto,
-  ): Promise<Paginated<AuthenticatedUser>> {
-    const page = pagination.page ?? 1;
-    const pageSize = pagination.pageSize ?? 20;
+  async findAll(query: UserQueryDto): Promise<Paginated<AuthenticatedUser>> {
+    const page = query.page ?? 1;
+    const pageSize = query.pageSize ?? 20;
+    const where = this.buildWhere(query);
     const [users, total] = await Promise.all([
       this.usersRepository.findAll({
         skip: (page - 1) * pageSize,
         take: pageSize,
+        where,
       }),
-      this.usersRepository.count(),
+      this.usersRepository.count(where),
     ]);
     return paginate(
       users.map((user) => this.sanitize(user)),
@@ -49,6 +47,34 @@ export class UsersService {
       page,
       pageSize,
     );
+  }
+
+  /** Bulk-create users, optionally adding each to a cohort in one call. */
+  async createMany(dto: BulkCreateUsersDto): Promise<AuthenticatedUser[]> {
+    const created: AuthenticatedUser[] = [];
+    for (const userDto of dto.users) {
+      const user = await this.create(userDto);
+      if (dto.cohortId) {
+        await this.usersRepository.addToCohort(user.id, dto.cohortId);
+      }
+      created.push(user);
+    }
+    return created;
+  }
+
+  private buildWhere(query: UserQueryDto): Prisma.UserWhereInput {
+    const where: Prisma.UserWhereInput = {};
+    if (query.role) where.role = query.role;
+    if (query.cohortId) {
+      where.cohortMemberships = { some: { cohortId: query.cohortId } };
+    }
+    if (query.search) {
+      where.OR = [
+        { name: { contains: query.search, mode: 'insensitive' } },
+        { email: { contains: query.search, mode: 'insensitive' } },
+      ];
+    }
+    return where;
   }
 
   async findOne(id: string): Promise<AuthenticatedUser> {
@@ -74,6 +100,12 @@ export class UsersService {
   async remove(id: string): Promise<void> {
     await this.findOne(id);
     await this.usersRepository.delete(id);
+  }
+
+  /** Hashes and stores a new password for the user (used by the reset flow). */
+  async updatePassword(id: string, newPassword: string): Promise<void> {
+    const passwordHash = await bcrypt.hash(newPassword, SALT_ROUNDS);
+    await this.usersRepository.update(id, { passwordHash });
   }
 
   /** Strips the password hash so it can never leak through a response. */

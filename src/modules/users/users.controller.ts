@@ -26,7 +26,9 @@ import { UsersService } from './users.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { UserResponseDto } from './dto/user-response.dto';
-import { Paginated, PaginationQueryDto } from '../../common/dto/pagination.dto';
+import { UserQueryDto } from './dto/user-query.dto';
+import { BulkCreateUsersDto } from './dto/bulk-create-users.dto';
+import { Paginated } from '../../common/dto/pagination.dto';
 
 @ApiTags('users')
 @ApiBearerAuth()
@@ -45,14 +47,23 @@ export class UsersController {
     return this.usersService.create(dto);
   }
 
+  @Post('bulk')
+  @Roles(Role.program_coordinator)
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({
+    summary: 'Bulk-create users, optionally assigning them to a cohort',
+  })
+  @ApiCreatedResponse({ type: UserResponseDto, isArray: true })
+  createMany(@Body() dto: BulkCreateUsersDto): Promise<UserResponseDto[]> {
+    return this.usersService.createMany(dto);
+  }
+
   @Get()
   @Roles(Role.program_coordinator, Role.facilitator)
   @ApiOperation({ summary: 'List users (Program Coordinator, Facilitator)' })
   @ApiOkResponse({ type: UserResponseDto, isArray: true })
-  findAll(
-    @Query() pagination: PaginationQueryDto,
-  ): Promise<Paginated<UserResponseDto>> {
-    return this.usersService.findAll(pagination);
+  findAll(@Query() query: UserQueryDto): Promise<Paginated<UserResponseDto>> {
+    return this.usersService.findAll(query);
   }
 
   @Get(':id')

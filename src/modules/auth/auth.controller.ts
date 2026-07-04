@@ -1,19 +1,35 @@
-import { Body, Controller, HttpCode, HttpStatus, Post } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  HttpCode,
+  HttpStatus,
+  Post,
+} from '@nestjs/common';
 import {
   ApiBearerAuth,
   ApiOkResponse,
   ApiCreatedResponse,
+  ApiNoContentResponse,
   ApiOperation,
   ApiTags,
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
 import { Public } from '../../common/decorators/public.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { AuthenticatedUser } from '../../common/interfaces';
 import { AuthService } from './auth.service';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
-import { AuthResponseDto, MessageResponseDto } from './dto/auth-response.dto';
+import { ForgotPasswordDto } from './dto/forgot-password.dto';
+import { ResetPasswordDto } from './dto/reset-password.dto';
+import {
+  AccessTokenResponseDto,
+  AuthResponseDto,
+  MessageResponseDto,
+} from './dto/auth-response.dto';
+import { UserResponseDto } from '../users/dto/user-response.dto';
 
 @ApiTags('auth')
 @Controller('auth')
@@ -46,11 +62,43 @@ export class AuthController {
   @Public()
   @Post('refresh')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Rotate a refresh token for a new token pair' })
-  @ApiOkResponse({ type: AuthResponseDto })
+  @ApiOperation({ summary: 'Exchange a refresh token for a new access token' })
+  @ApiOkResponse({ type: AccessTokenResponseDto })
   @ApiUnauthorizedResponse({ description: 'Invalid or expired refresh token' })
-  refresh(@Body() dto: RefreshTokenDto): Promise<AuthResponseDto> {
+  refresh(@Body() dto: RefreshTokenDto): Promise<AccessTokenResponseDto> {
     return this.authService.refresh(dto.refreshToken);
+  }
+
+  @Public()
+  @Post('forgot-password')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({
+    summary: 'Request a password reset token (logged to the server in dev)',
+  })
+  @ApiNoContentResponse({
+    description: 'Reset token issued if the email exists',
+  })
+  forgotPassword(@Body() dto: ForgotPasswordDto): Promise<void> {
+    return this.authService.forgotPassword(dto.email);
+  }
+
+  @Public()
+  @Post('reset-password')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({ summary: 'Set a new password using a reset token' })
+  @ApiNoContentResponse({ description: 'Password updated' })
+  @ApiUnauthorizedResponse({ description: 'Invalid or expired reset token' })
+  resetPassword(@Body() dto: ResetPasswordDto): Promise<void> {
+    return this.authService.resetPassword(dto.token, dto.newPassword);
+  }
+
+  @Get('me')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Get the currently authenticated user' })
+  @ApiOkResponse({ type: UserResponseDto })
+  @ApiUnauthorizedResponse({ description: 'Missing or invalid access token' })
+  me(@CurrentUser() user: AuthenticatedUser): UserResponseDto {
+    return user;
   }
 
   @Post('logout')

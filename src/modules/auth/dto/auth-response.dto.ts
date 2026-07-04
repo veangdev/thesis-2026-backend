@@ -20,3 +20,10 @@ export class MessageResponseDto {
   @ApiProperty({ example: 'Logged out successfully' })
   message: string;
 }
+
+export class AccessTokenResponseDto {
+  @ApiProperty({
+    description: 'A freshly issued short-lived JWT access token',
+  })
+  accessToken: string;
+}
