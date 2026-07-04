@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { Role, Status } from '../../../common/enums';
+import { Role } from '../../../common/enums';
 
 /** Public representation of a user — never includes the password hash. */
 export class UserResponseDto {
@@ -9,14 +9,20 @@ export class UserResponseDto {
   @ApiProperty({ example: 'Jane Student' })
   name: string;
 
-  @ApiProperty({ example: 'jane@pnc.edu.kh' })
+  @ApiProperty({ example: 'jane@pnc.edu' })
   email: string;
 
-  @ApiProperty({ enum: Role, example: Role.STUDENT })
+  @ApiProperty({ enum: Role, example: Role.self_assessor })
   role: Role;
 
-  @ApiProperty({ enum: Status, example: Status.ACTIVE })
-  status: Status;
+  @ApiProperty({ example: null, nullable: true })
+  avatarUrl: string | null;
+
+  @ApiProperty({ type: [String], example: [] })
+  expertiseTags: string[];
+
+  @ApiProperty({ example: true })
+  isActive: boolean;
 
   @ApiProperty({ type: String, format: 'date-time' })
   createdAt: Date;

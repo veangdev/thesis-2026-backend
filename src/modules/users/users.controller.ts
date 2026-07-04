@@ -8,6 +8,7 @@ import {
   Param,
   Patch,
   Post,
+  Query,
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
@@ -25,6 +26,7 @@ import { UsersService } from './users.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { UserResponseDto } from './dto/user-response.dto';
+import { Paginated, PaginationQueryDto } from '../../common/dto/pagination.dto';
 
 @ApiTags('users')
 @ApiBearerAuth()
@@ -35,20 +37,22 @@ export class UsersController {
   constructor(private readonly usersService: UsersService) {}
 
   @Post()
-  @Roles(Role.ADMIN)
+  @Roles(Role.program_coordinator)
   @HttpCode(HttpStatus.CREATED)
-  @ApiOperation({ summary: 'Create a user (ADMIN only)' })
+  @ApiOperation({ summary: 'Create a user (Program Coordinator only)' })
   @ApiCreatedResponse({ type: UserResponseDto })
   create(@Body() dto: CreateUserDto): Promise<UserResponseDto> {
     return this.usersService.create(dto);
   }
 
   @Get()
-  @Roles(Role.ADMIN, Role.MENTOR)
-  @ApiOperation({ summary: 'List all users (ADMIN, MENTOR)' })
+  @Roles(Role.program_coordinator, Role.facilitator)
+  @ApiOperation({ summary: 'List users (Program Coordinator, Facilitator)' })
   @ApiOkResponse({ type: UserResponseDto, isArray: true })
-  findAll(): Promise<UserResponseDto[]> {
-    return this.usersService.findAll();
+  findAll(
+    @Query() pagination: PaginationQueryDto,
+  ): Promise<Paginated<UserResponseDto>> {
+    return this.usersService.findAll(pagination);
   }
 
   @Get(':id')
@@ -59,7 +63,7 @@ export class UsersController {
   }
 
   @Patch(':id')
-  @Roles(Role.ADMIN)
+  @Roles(Role.program_coordinator)
   @ApiOperation({ summary: 'Update a user (ADMIN only)' })
   @ApiOkResponse({ type: UserResponseDto })
   update(
@@ -70,7 +74,7 @@ export class UsersController {
   }
 
   @Delete(':id')
-  @Roles(Role.ADMIN)
+  @Roles(Role.program_coordinator)
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: 'Delete a user (ADMIN only)' })
   @ApiNoContentResponse({ description: 'User deleted' })

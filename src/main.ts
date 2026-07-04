@@ -33,7 +33,7 @@ async function bootstrap() {
     .addBearerAuth()
     .build();
   const document = SwaggerModule.createDocument(app, swaggerConfig);
-  SwaggerModule.setup('docs', app, document, {
+  SwaggerModule.setup('api/docs', app, document, {
     swaggerOptions: { persistAuthorization: true },
   });
 
@@ -41,7 +41,7 @@ async function bootstrap() {
   const port = config.get<number>('port') ?? 3000;
   await app.listen(port);
   logger.log(`Application running on http://localhost:${port}/${prefix}`);
-  logger.log(`Swagger docs available at http://localhost:${port}/docs`);
+  logger.log(`Swagger docs available at http://localhost:${port}/api/docs`);
 }
 
 void bootstrap();

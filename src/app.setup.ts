@@ -9,7 +9,6 @@ import helmet from 'helmet';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import { RolesGuard } from './common/guards/roles.guard';
-import { TransformInterceptor } from './common/interceptors/transform.interceptor';
 import { loggerMiddleware } from './common/middleware/logger.middleware';
 
 /**
@@ -31,7 +30,6 @@ export function setupApp(app: INestApplication): void {
 
   app.useGlobalGuards(new JwtAuthGuard(reflector), new RolesGuard(reflector));
   app.useGlobalFilters(new AllExceptionsFilter());
-  app.useGlobalInterceptors(new TransformInterceptor());
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,

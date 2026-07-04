@@ -7,14 +7,14 @@ import {
   Logger,
 } from '@nestjs/common';
 import type { Request, Response } from 'express';
+import { STATUS_CODES } from 'http';
 import { Prisma } from '../../../generated/prisma/client';
 
+/** Nest-default error envelope: `{ statusCode, message, error }`. */
 interface ErrorBody {
-  success: false;
   statusCode: number;
-  timestamp: string;
-  path: string;
   message: string | string[];
+  error: string;
 }
 
 /**
@@ -33,11 +33,9 @@ export class AllExceptionsFilter implements ExceptionFilter {
     const { status, message } = this.resolve(exception);
 
     const body: ErrorBody = {
-      success: false,
       statusCode: status,
-      timestamp: new Date().toISOString(),
-      path: request.url,
       message,
+      error: STATUS_CODES[status] ?? 'Error',
     };
 
     if (status >= 500) {

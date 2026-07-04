@@ -7,7 +7,7 @@ export class AppController {
   /** Send visitors hitting the bare root to the API documentation. */
   @Public()
   @Get()
-  @Redirect('/docs', 302)
+  @Redirect('/api/docs', 302)
   @ApiExcludeEndpoint()
   root(): void {}
 }

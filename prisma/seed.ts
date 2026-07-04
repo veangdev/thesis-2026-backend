@@ -7,45 +7,46 @@ const adapter = new PrismaPg(process.env.DATABASE_URL!);
 const prisma = new PrismaClient({ adapter });
 
 async function main() {
-  const password = await bcrypt.hash('Admin@1234', 12);
+  const passwordHash = await bcrypt.hash('Password123!', 12);
 
   await prisma.user.upsert({
-    where: { email: 'admin@pnc.edu.kh' },
+    where: { email: 'coordinator@pnc.edu' },
     update: {},
     create: {
-      name: 'System Admin',
-      email: 'admin@pnc.edu.kh',
-      password,
-      role: 'ADMIN',
-      status: 'ACTIVE',
+      name: 'Program Coordinator',
+      email: 'coordinator@pnc.edu',
+      passwordHash,
+      role: 'program_coordinator',
+      isActive: true,
     },
   });
 
   await prisma.user.upsert({
-    where: { email: 'mentor@pnc.edu.kh' },
+    where: { email: 'facilitator@pnc.edu' },
     update: {},
     create: {
-      name: 'Demo Mentor',
-      email: 'mentor@pnc.edu.kh',
-      password,
-      role: 'MENTOR',
-      status: 'ACTIVE',
+      name: 'Demo Facilitator',
+      email: 'facilitator@pnc.edu',
+      passwordHash,
+      role: 'facilitator',
+      expertiseTags: ['communication', 'leadership'],
+      isActive: true,
     },
   });
 
   await prisma.user.upsert({
-    where: { email: 'student@pnc.edu.kh' },
+    where: { email: 'student@pnc.edu' },
     update: {},
     create: {
-      name: 'Demo Student',
-      email: 'student@pnc.edu.kh',
-      password,
-      role: 'STUDENT',
-      status: 'ACTIVE',
+      name: 'Demo Self-Assessor',
+      email: 'student@pnc.edu',
+      passwordHash,
+      role: 'self_assessor',
+      isActive: true,
     },
   });
 
-  console.log('Seed completed: admin, mentor, student created');
+  console.log('Seed completed: coordinator, facilitator, student created');
 }
 
 main()

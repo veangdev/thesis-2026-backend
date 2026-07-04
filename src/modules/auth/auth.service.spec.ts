@@ -6,7 +6,7 @@ import * as bcrypt from 'bcryptjs';
 import { AuthService } from './auth.service';
 import { UsersService } from '../users/users.service';
 import { RefreshTokenRepository } from './refresh-token.repository';
-import { Role, Status } from '../../common/enums';
+import { Role } from '../../common/enums';
 
 describe('AuthService', () => {
   let service: AuthService;
@@ -32,9 +32,11 @@ describe('AuthService', () => {
   const safeUser = {
     id: 'user-1',
     name: 'Jane',
-    email: 'jane@pnc.edu.kh',
-    role: Role.STUDENT,
-    status: Status.ACTIVE,
+    email: 'jane@pnc.edu',
+    role: Role.self_assessor,
+    avatarUrl: null,
+    expertiseTags: [],
+    isActive: true,
     createdAt: new Date(),
     updatedAt: new Date(),
   };
@@ -63,8 +65,8 @@ describe('AuthService', () => {
 
   describe('login', () => {
     it('returns a token pair for valid credentials', async () => {
-      const password = await bcrypt.hash('password123', 4);
-      usersService.findByEmail.mockResolvedValue({ ...safeUser, password });
+      const passwordHash = await bcrypt.hash('password123', 4);
+      usersService.findByEmail.mockResolvedValue({ ...safeUser, passwordHash });
 
       const result = await service.login({
         email: safeUser.email,
@@ -73,7 +75,7 @@ describe('AuthService', () => {
 
       expect(result.accessToken).toBe('access-token');
       expect(result.refreshToken).toBe('refresh-token');
-      expect(result.user).not.toHaveProperty('password');
+      expect(result.user).not.toHaveProperty('passwordHash');
       expect(refreshTokens.create).toHaveBeenCalledTimes(1);
     });
 
@@ -85,8 +87,8 @@ describe('AuthService', () => {
     });
 
     it('throws when the password does not match', async () => {
-      const password = await bcrypt.hash('correct-password', 4);
-      usersService.findByEmail.mockResolvedValue({ ...safeUser, password });
+      const passwordHash = await bcrypt.hash('correct-password', 4);
+      usersService.findByEmail.mockResolvedValue({ ...safeUser, passwordHash });
       await expect(
         service.login({ email: safeUser.email, password: 'wrong-password' }),
       ).rejects.toThrow(UnauthorizedException);
@@ -94,7 +96,7 @@ describe('AuthService', () => {
   });
 
   describe('register', () => {
-    it('creates a STUDENT and issues tokens', async () => {
+    it('creates a self_assessor and issues tokens', async () => {
       usersService.create.mockResolvedValue(safeUser);
 
       const result = await service.register({
@@ -104,7 +106,7 @@ describe('AuthService', () => {
       });
 
       expect(usersService.create).toHaveBeenCalledWith(
-        expect.objectContaining({ role: Role.STUDENT }),
+        expect.objectContaining({ role: Role.self_assessor }),
       );
       expect(result.accessToken).toBe('access-token');
     });

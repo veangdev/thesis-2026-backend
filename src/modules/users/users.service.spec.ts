@@ -2,7 +2,7 @@ import { Test } from '@nestjs/testing';
 import { ConflictException, NotFoundException } from '@nestjs/common';
 import { UsersService } from './users.service';
 import { UsersRepository } from './users.repository';
-import { Role, Status } from '../../common/enums';
+import { Role } from '../../common/enums';
 
 describe('UsersService', () => {
   let service: UsersService;
@@ -10,6 +10,7 @@ describe('UsersService', () => {
   const repo = {
     create: jest.fn(),
     findAll: jest.fn(),
+    count: jest.fn(),
     findById: jest.fn(),
     findByEmail: jest.fn(),
     update: jest.fn(),
@@ -19,10 +20,12 @@ describe('UsersService', () => {
   const userRecord = {
     id: 'user-1',
     name: 'Jane',
-    email: 'jane@pnc.edu.kh',
-    password: 'hashed-secret',
-    role: Role.STUDENT,
-    status: Status.ACTIVE,
+    email: 'jane@pnc.edu',
+    passwordHash: 'hashed-secret',
+    role: Role.self_assessor,
+    avatarUrl: null,
+    expertiseTags: [],
+    isActive: true,
     createdAt: new Date(),
     updatedAt: new Date(),
   };
@@ -46,9 +49,12 @@ describe('UsersService', () => {
         password: 'password123',
       });
 
-      const createArg = repo.create.mock.calls[0][0] as { password: string };
-      expect(createArg.password).not.toBe('password123');
-      expect(result).not.toHaveProperty('password');
+      const createArg = repo.create.mock.calls[0][0] as {
+        passwordHash: string;
+      };
+      expect(createArg.passwordHash).not.toBe('password123');
+      expect(createArg).not.toHaveProperty('password');
+      expect(result).not.toHaveProperty('passwordHash');
     });
 
     it('rejects a duplicate email', async () => {
@@ -67,7 +73,7 @@ describe('UsersService', () => {
     it('returns a sanitized user', async () => {
       repo.findById.mockResolvedValue(userRecord);
       const result = await service.findOne('user-1');
-      expect(result).not.toHaveProperty('password');
+      expect(result).not.toHaveProperty('passwordHash');
       expect(result.email).toBe(userRecord.email);
     });
 
@@ -78,11 +84,15 @@ describe('UsersService', () => {
   });
 
   describe('findAll', () => {
-    it('sanitizes every user', async () => {
+    it('returns a paginated, sanitized envelope', async () => {
       repo.findAll.mockResolvedValue([userRecord, userRecord]);
-      const result = await service.findAll();
-      expect(result).toHaveLength(2);
-      result.forEach((u) => expect(u).not.toHaveProperty('password'));
+      repo.count.mockResolvedValue(2);
+
+      const result = await service.findAll({ page: 1, pageSize: 20 });
+
+      expect(result.meta).toEqual({ page: 1, pageSize: 20, total: 2 });
+      expect(result.data).toHaveLength(2);
+      result.data.forEach((u) => expect(u).not.toHaveProperty('passwordHash'));
     });
   });
 });

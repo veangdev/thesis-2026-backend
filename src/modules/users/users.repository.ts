@@ -21,8 +21,16 @@ export class UsersRepository extends BaseRepository<
     return this.prisma.user.create({ data });
   }
 
-  findAll(): Promise<User[]> {
-    return this.prisma.user.findMany({ orderBy: { createdAt: 'desc' } });
+  findAll(params?: { skip?: number; take?: number }): Promise<User[]> {
+    return this.prisma.user.findMany({
+      orderBy: { createdAt: 'desc' },
+      skip: params?.skip,
+      take: params?.take,
+    });
+  }
+
+  count(): Promise<number> {
+    return this.prisma.user.count();
   }
 
   findById(id: string): Promise<User | null> {

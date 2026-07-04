@@ -39,9 +39,9 @@ class EnvironmentVariables {
 
   @IsString()
   @MinLength(16, {
-    message: 'JWT_ACCESS_SECRET must be at least 16 characters',
+    message: 'JWT_SECRET must be at least 16 characters',
   })
-  JWT_ACCESS_SECRET!: string;
+  JWT_SECRET!: string;
 
   @IsString()
   @IsOptional()
@@ -59,7 +59,7 @@ class EnvironmentVariables {
 
   @IsString()
   @IsOptional()
-  CORS_ORIGINS?: string;
+  CORS_ORIGIN?: string;
 }
 
 export function validateEnv(

@@ -35,7 +35,10 @@ export class AuthService {
   ) {}
 
   async register(dto: RegisterDto): Promise<AuthResult> {
-    const user = await this.usersService.create({ ...dto, role: Role.STUDENT });
+    const user = await this.usersService.create({
+      ...dto,
+      role: Role.self_assessor,
+    });
     return this.issueTokens(user);
   }
 
@@ -43,11 +46,11 @@ export class AuthService {
     const user = await this.usersService.findByEmail(dto.email);
     if (!user) throw new UnauthorizedException('Invalid credentials');
 
-    const passwordMatch = await bcrypt.compare(dto.password, user.password);
+    const passwordMatch = await bcrypt.compare(dto.password, user.passwordHash);
     if (!passwordMatch) throw new UnauthorizedException('Invalid credentials');
 
-    const { password: _password, ...safeUser } = user;
-    void _password;
+    const { passwordHash: _passwordHash, ...safeUser } = user;
+    void _passwordHash;
     return this.issueTokens(safeUser);
   }
 

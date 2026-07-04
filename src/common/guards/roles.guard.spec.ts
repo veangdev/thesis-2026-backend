@@ -21,27 +21,33 @@ describe('RolesGuard', () => {
 
   it('allows the request when no roles are required', () => {
     jest.spyOn(reflector, 'getAllAndOverride').mockReturnValue(undefined);
-    expect(guard.canActivate(contextWithUser({ role: Role.STUDENT }))).toBe(
-      true,
-    );
+    expect(
+      guard.canActivate(contextWithUser({ role: Role.self_assessor })),
+    ).toBe(true);
   });
 
   it('allows the request when the user has a required role', () => {
     jest
       .spyOn(reflector, 'getAllAndOverride')
-      .mockReturnValue([Role.ADMIN, Role.MENTOR]);
-    expect(guard.canActivate(contextWithUser({ role: Role.ADMIN }))).toBe(true);
+      .mockReturnValue([Role.program_coordinator, Role.facilitator]);
+    expect(
+      guard.canActivate(contextWithUser({ role: Role.program_coordinator })),
+    ).toBe(true);
   });
 
   it('denies the request when the user lacks the required role', () => {
-    jest.spyOn(reflector, 'getAllAndOverride').mockReturnValue([Role.ADMIN]);
-    expect(guard.canActivate(contextWithUser({ role: Role.STUDENT }))).toBe(
-      false,
-    );
+    jest
+      .spyOn(reflector, 'getAllAndOverride')
+      .mockReturnValue([Role.program_coordinator]);
+    expect(
+      guard.canActivate(contextWithUser({ role: Role.self_assessor })),
+    ).toBe(false);
   });
 
   it('denies the request when there is no user', () => {
-    jest.spyOn(reflector, 'getAllAndOverride').mockReturnValue([Role.ADMIN]);
+    jest
+      .spyOn(reflector, 'getAllAndOverride')
+      .mockReturnValue([Role.program_coordinator]);
     expect(guard.canActivate(contextWithUser(undefined))).toBe(false);
   });
 });

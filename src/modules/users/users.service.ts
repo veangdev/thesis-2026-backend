@@ -8,6 +8,11 @@ import { UsersRepository } from './users.repository';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { AuthenticatedUser } from '../../common/interfaces';
+import {
+  Paginated,
+  PaginationQueryDto,
+  paginate,
+} from '../../common/dto/pagination.dto';
 import { User } from '../../../generated/prisma/client';
 
 const SALT_ROUNDS = 12;
@@ -20,14 +25,30 @@ export class UsersService {
     const existing = await this.usersRepository.findByEmail(dto.email);
     if (existing) throw new ConflictException('Email already in use');
 
-    const password = await bcrypt.hash(dto.password, SALT_ROUNDS);
-    const user = await this.usersRepository.create({ ...dto, password });
+    const { password, ...rest } = dto;
+    const passwordHash = await bcrypt.hash(password, SALT_ROUNDS);
+    const user = await this.usersRepository.create({ ...rest, passwordHash });
     return this.sanitize(user);
   }
 
-  async findAll(): Promise<AuthenticatedUser[]> {
-    const users = await this.usersRepository.findAll();
-    return users.map((user) => this.sanitize(user));
+  async findAll(
+    pagination: PaginationQueryDto,
+  ): Promise<Paginated<AuthenticatedUser>> {
+    const page = pagination.page ?? 1;
+    const pageSize = pagination.pageSize ?? 20;
+    const [users, total] = await Promise.all([
+      this.usersRepository.findAll({
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+      }),
+      this.usersRepository.count(),
+    ]);
+    return paginate(
+      users.map((user) => this.sanitize(user)),
+      total,
+      page,
+      pageSize,
+    );
   }
 
   async findOne(id: string): Promise<AuthenticatedUser> {
@@ -57,8 +78,8 @@ export class UsersService {
 
   /** Strips the password hash so it can never leak through a response. */
   private sanitize(user: User): AuthenticatedUser {
-    const { password: _password, ...safe } = user;
-    void _password;
+    const { passwordHash: _passwordHash, ...safe } = user;
+    void _passwordHash;
     return safe;
   }
 }

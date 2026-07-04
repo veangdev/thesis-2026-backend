@@ -13,7 +13,7 @@ describe('Auth & RBAC (e2e)', () => {
   const unique = Date.now();
   const newUser = {
     name: 'E2E User',
-    email: `e2e-${unique}@pnc.edu.kh`,
+    email: `e2e-${unique}@pnc.edu`,
     password: 'password123',
   };
 
@@ -37,13 +37,12 @@ describe('Auth & RBAC (e2e)', () => {
 
   it('redirects the root path to the Swagger docs', async () => {
     const res = await request(httpServer).get('/').expect(302);
-    expect(res.headers.location).toBe('/docs');
+    expect(res.headers.location).toBe('/api/docs');
   });
 
   it('GET /health is public and reports ok', async () => {
     const res = await request(httpServer).get(`${PREFIX}/health`).expect(200);
-    expect(res.body.success).toBe(true);
-    expect(res.body.data.status).toBe('ok');
+    expect(res.body.status).toBe('ok');
   });
 
   it('rejects registration with invalid payload (400 envelope)', async () => {
@@ -51,7 +50,8 @@ describe('Auth & RBAC (e2e)', () => {
       .post(`${PREFIX}/auth/register`)
       .send({ email: 'not-an-email', password: 'short' })
       .expect(400);
-    expect(res.body.success).toBe(false);
+    expect(res.body.statusCode).toBe(400);
+    expect(res.body.error).toBe('Bad Request');
     expect(Array.isArray(res.body.message)).toBe(true);
   });
 
@@ -60,11 +60,11 @@ describe('Auth & RBAC (e2e)', () => {
       .post(`${PREFIX}/auth/register`)
       .send(newUser)
       .expect(201);
-    expect(res.body.data.accessToken).toBeDefined();
-    expect(res.body.data.refreshToken).toBeDefined();
-    expect(res.body.data.user).not.toHaveProperty('password');
-    accessToken = res.body.data.accessToken;
-    refreshToken = res.body.data.refreshToken;
+    expect(res.body.accessToken).toBeDefined();
+    expect(res.body.refreshToken).toBeDefined();
+    expect(res.body.user).not.toHaveProperty('passwordHash');
+    accessToken = res.body.accessToken;
+    refreshToken = res.body.refreshToken;
   });
 
   it('logs in with the new credentials', async () => {
@@ -72,16 +72,16 @@ describe('Auth & RBAC (e2e)', () => {
       .post(`${PREFIX}/auth/login`)
       .send({ email: newUser.email, password: newUser.password })
       .expect(200);
-    expect(res.body.data.accessToken).toBeDefined();
-    accessToken = res.body.data.accessToken;
-    refreshToken = res.body.data.refreshToken;
+    expect(res.body.accessToken).toBeDefined();
+    accessToken = res.body.accessToken;
+    refreshToken = res.body.refreshToken;
   });
 
   it('rejects a protected route without a token (401)', async () => {
     await request(httpServer).get(`${PREFIX}/users`).expect(401);
   });
 
-  it('forbids a STUDENT from the admin-only user list (403)', async () => {
+  it('forbids a self_assessor from the coordinator-only user list (403)', async () => {
     await request(httpServer)
       .get(`${PREFIX}/users`)
       .set('Authorization', `Bearer ${accessToken}`)
@@ -93,7 +93,7 @@ describe('Auth & RBAC (e2e)', () => {
       .post(`${PREFIX}/auth/refresh`)
       .send({ refreshToken })
       .expect(200);
-    expect(refreshed.body.data.accessToken).toBeDefined();
+    expect(refreshed.body.accessToken).toBeDefined();
 
     // The original refresh token must no longer be accepted after rotation.
     await request(httpServer)
@@ -101,7 +101,7 @@ describe('Auth & RBAC (e2e)', () => {
       .send({ refreshToken })
       .expect(401);
 
-    accessToken = refreshed.body.data.accessToken;
+    accessToken = refreshed.body.accessToken;
   });
 
   it('logs out the current user', async () => {

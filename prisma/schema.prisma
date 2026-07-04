@@ -7,28 +7,75 @@ datasource db {
   provider = "postgresql"
 }
 
+// ─────────────────────────────── Enums ───────────────────────────────
+
+/// System role keys — must match the frontend contract exactly.
 enum Role {
-  STUDENT
-  MENTOR
-  ADMIN
+  program_coordinator
+  facilitator
+  self_assessor
 }
 
-enum Status {
-  ACTIVE
-  INACTIVE
+enum AssessmentPeriodStatus {
+  upcoming
+  open
+  closed
 }
+
+enum AssessmentStatus {
+  draft
+  self_submitted
+  mentor_review
+  agreed
+  completed
+}
+
+enum CoachingScope {
+  individual
+  group
+  class
+  batch
+}
+
+enum CoachingStatus {
+  scheduled
+  completed
+  cancelled
+}
+
+enum NotificationType {
+  assessment_reminder
+  coaching_reminder
+  achievement
+  submission
+  system
+}
+
+// ─────────────────────────────── Identity ───────────────────────────────
 
 model User {
-  id        String   @id @default(cuid())
-  name      String
-  email     String   @unique
-  password  String
-  role      Role     @default(STUDENT)
-  status    Status   @default(ACTIVE)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id            String   @id @default(cuid())
+  name          String
+  email         String   @unique
+  passwordHash  String
+  role          Role     @default(self_assessor)
+  avatarUrl     String?
+  expertiseTags String[] @default([])
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
-  refreshTokens RefreshToken[]
+  refreshTokens           RefreshToken[]
+  cohortMemberships       CohortMember[]
+  facilitatorAssignments  MentorAssignment[]    @relation("FacilitatorAssignments")
+  selfAssessorAssignments MentorAssignment[]    @relation("SelfAssessorAssignments")
+  assessments             Assessment[]
+  coachingSessions        CoachingSession[]     @relation("FacilitatorSessions")
+  coachingParticipations  CoachingParticipant[]
+  goals                   Goal[]
+  notifications           Notification[]
+  achievements            Achievement[]
+  auditLogs               AuditLog[]
 
   @@map("users")
 }
@@ -45,4 +92,261 @@ model RefreshToken {
 
   @@index([userId])
   @@map("refresh_tokens")
+}
+
+// ─────────────────────────────── Cohorts ───────────────────────────────
+
+model Cohort {
+  id              String   @id @default(cuid())
+  name            String
+  startDate       DateTime
+  expectedEndDate DateTime
+  scoringScaleMax Int      @default(5) // allow 5 or 10
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  members     CohortMember[]
+  assignments MentorAssignment[]
+  dimensions  Dimension[]
+  periods     AssessmentPeriod[]
+
+  @@map("cohorts")
+}
+
+model CohortMember {
+  id       String   @id @default(cuid())
+  userId   String
+  cohortId String
+  joinedAt DateTime @default(now())
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  cohort Cohort @relation(fields: [cohortId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, cohortId])
+  @@index([cohortId])
+  @@map("cohort_members")
+}
+
+model MentorAssignment {
+  id             String   @id @default(cuid())
+  facilitatorId  String
+  selfAssessorId String
+  cohortId       String
+  active         Boolean  @default(true)
+  createdAt      DateTime @default(now())
+
+  facilitator  User   @relation("FacilitatorAssignments", fields: [facilitatorId], references: [id], onDelete: Cascade)
+  selfAssessor User   @relation("SelfAssessorAssignments", fields: [selfAssessorId], references: [id], onDelete: Cascade)
+  cohort       Cohort @relation(fields: [cohortId], references: [id], onDelete: Cascade)
+
+  @@unique([facilitatorId, selfAssessorId, cohortId])
+  @@index([facilitatorId])
+  @@index([selfAssessorId])
+  @@index([cohortId])
+  @@map("mentor_assignments")
+}
+
+// ─────────────────────────────── Assessments ───────────────────────────────
+
+model Dimension {
+  id          String   @id @default(cuid())
+  cohortId    String
+  name        String
+  description String?
+  order       Int      @default(0)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  cohort           Cohort                     @relation(fields: [cohortId], references: [id], onDelete: Cascade)
+  scores           AssessmentScore[]
+  goals            Goal[]
+  coachingSessions CoachingSessionDimension[]
+
+  @@index([cohortId])
+  @@map("dimensions")
+}
+
+model AssessmentPeriod {
+  id        String                 @id @default(cuid())
+  cohortId  String
+  name      String
+  startDate DateTime
+  endDate   DateTime
+  status    AssessmentPeriodStatus @default(upcoming)
+  createdAt DateTime               @default(now())
+  updatedAt DateTime               @updatedAt
+
+  cohort      Cohort       @relation(fields: [cohortId], references: [id], onDelete: Cascade)
+  assessments Assessment[]
+
+  @@index([cohortId])
+  @@map("assessment_periods")
+}
+
+model Assessment {
+  id                String           @id @default(cuid())
+  studentId         String
+  periodId          String
+  status            AssessmentStatus @default(draft)
+  submittedAt       DateTime?
+  mentorSubmittedAt DateTime?
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+
+  student User              @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  period  AssessmentPeriod  @relation(fields: [periodId], references: [id], onDelete: Cascade)
+  scores  AssessmentScore[]
+
+  @@unique([studentId, periodId])
+  @@index([studentId])
+  @@index([periodId])
+  @@map("assessments")
+}
+
+model AssessmentScore {
+  id                   String  @id @default(cuid())
+  assessmentId         String
+  dimensionId          String
+  selfScore            Int?
+  selfReflection       String?
+  mentorScore          Int?
+  mentorNote           String?
+  agreedScore          Int?
+  coachingRecommended  Boolean @default(false)
+
+  assessment Assessment @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+  dimension  Dimension  @relation(fields: [dimensionId], references: [id], onDelete: Cascade)
+
+  @@unique([assessmentId, dimensionId])
+  @@index([dimensionId])
+  @@map("assessment_scores")
+}
+
+// ─────────────────────────────── Coaching ───────────────────────────────
+
+model CoachingSession {
+  id              String         @id @default(cuid())
+  title           String
+  scope           CoachingScope
+  facilitatorId   String
+  scheduledAt     DateTime
+  durationMinutes Int            @default(60)
+  notes           String?
+  status          CoachingStatus @default(scheduled)
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  facilitator      User                       @relation("FacilitatorSessions", fields: [facilitatorId], references: [id], onDelete: Cascade)
+  participants     CoachingParticipant[]
+  targetDimensions CoachingSessionDimension[]
+  actionItems      ActionItem[]
+
+  @@index([facilitatorId])
+  @@map("coaching_sessions")
+}
+
+model CoachingParticipant {
+  id        String @id @default(cuid())
+  sessionId String
+  userId    String
+
+  session CoachingSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  user    User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([sessionId, userId])
+  @@index([userId])
+  @@map("coaching_participants")
+}
+
+model CoachingSessionDimension {
+  id          String @id @default(cuid())
+  sessionId   String
+  dimensionId String
+
+  session   CoachingSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  dimension Dimension       @relation(fields: [dimensionId], references: [id], onDelete: Cascade)
+
+  @@unique([sessionId, dimensionId])
+  @@index([dimensionId])
+  @@map("coaching_session_dimensions")
+}
+
+model ActionItem {
+  id          String    @id @default(cuid())
+  sessionId   String
+  description String
+  dueDate     DateTime?
+  done        Boolean   @default(false)
+  createdAt   DateTime  @default(now())
+
+  session CoachingSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId])
+  @@map("action_items")
+}
+
+// ─────────────────────────────── Growth ───────────────────────────────
+
+model Goal {
+  id                String    @id @default(cuid())
+  studentId         String
+  title             String
+  description       String?
+  targetDimensionId String?
+  dueDate           DateTime?
+  progressPercent   Int       @default(0)
+  milestones        Json?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  student         User       @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  targetDimension Dimension? @relation(fields: [targetDimensionId], references: [id], onDelete: SetNull)
+
+  @@index([studentId])
+  @@index([targetDimensionId])
+  @@map("goals")
+}
+
+model Notification {
+  id        String           @id @default(cuid())
+  userId    String
+  type      NotificationType
+  title     String
+  body      String
+  readAt    DateTime?
+  createdAt DateTime         @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("notifications")
+}
+
+model Achievement {
+  id        String   @id @default(cuid())
+  studentId String
+  key       String
+  title     String
+  earnedAt  DateTime @default(now())
+
+  student User @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@index([studentId])
+  @@map("achievements")
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  actorId   String
+  action    String
+  entity    String
+  entityId  String
+  metadata  Json?
+  createdAt DateTime @default(now())
+
+  actor User @relation(fields: [actorId], references: [id], onDelete: Cascade)
+
+  @@index([actorId])
+  @@map("audit_logs")
 }

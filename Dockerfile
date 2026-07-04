@@ -27,7 +27,7 @@ COPY package.json yarn.lock prisma.config.ts ./
 COPY docker-entrypoint.sh ./docker-entrypoint.sh
 RUN chmod +x docker-entrypoint.sh
 
-EXPOSE 3000
+EXPOSE 8000
 
 ENTRYPOINT ["./docker-entrypoint.sh"]
 CMD ["node", "dist/main"]
