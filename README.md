@@ -133,14 +133,14 @@ cp .env.example .env
 | Variable                 | Description                             | Example                 |
 | ------------------------ | --------------------------------------- | ----------------------- |
 | `NODE_ENV`               | `development` \| `production` \| `test` | `development`           |
-| `PORT`                   | HTTP port                               | `3000`                  |
+| `PORT`                   | HTTP port                               | `8000`                  |
 | `APP_PREFIX`             | Global route prefix                     | `api/v1`                |
 | `DATABASE_URL`           | PostgreSQL connection string            | `postgresql://...`      |
 | `JWT_SECRET`             | Access-token secret (min 16 chars)      | `change-me-...`         |
 | `JWT_ACCESS_EXPIRES_IN`  | Access-token lifetime                   | `15m`                   |
 | `JWT_REFRESH_SECRET`     | Refresh-token secret (min 16 chars)     | `change-me-...`         |
 | `JWT_REFRESH_EXPIRES_IN` | Refresh-token lifetime                  | `7d`                    |
-| `CORS_ORIGIN`            | Allowed origin(s), comma-separated      | `http://localhost:5173` |
+| `CORS_ORIGIN`            | Allowed origin(s), comma-separated      | `http://localhost:3000` |
 
 Invalid or missing variables cause the app to fail fast at startup.
 
@@ -157,7 +157,7 @@ yarn dev                          # watch mode
 yarn build && yarn start          # production build
 ```
 
-The API is served at `http://localhost:3000/api/v1` (or whichever `PORT` you set).
+The API is served at `http://localhost:8000/api/v1` (or whichever `PORT` you set).
 
 ## Running with Docker
 
@@ -206,7 +206,7 @@ achievements.
 Interactive OpenAPI docs live at:
 
 ```
-http://localhost:3000/api/docs      # (port 8000 under Docker)
+http://localhost:8000/api/docs
 ```
 
 Click **Authorize**, paste an access token, and the `Bearer` header is sent with
