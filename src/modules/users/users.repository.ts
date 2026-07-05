@@ -1,6 +1,5 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
-import { BaseRepository } from '../../common/repositories/base.repository';
 import { Prisma, User } from '../../../generated/prisma/client';
 
 /**
@@ -8,14 +7,8 @@ import { Prisma, User } from '../../../generated/prisma/client';
  * repository rather than to PrismaService directly.
  */
 @Injectable()
-export class UsersRepository extends BaseRepository<
-  User,
-  Prisma.UserCreateInput,
-  Prisma.UserUpdateInput
-> {
-  constructor(private readonly prisma: PrismaService) {
-    super();
-  }
+export class UsersRepository {
+  constructor(private readonly prisma: PrismaService) {}
 
   create(data: Prisma.UserCreateInput): Promise<User> {
     return this.prisma.user.create({ data });
