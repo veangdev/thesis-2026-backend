@@ -61,6 +61,7 @@ interface GapEntry {
 
 export interface StudentAnalytics {
   studentId: string;
+  studentName: string;
   scaleMax: number;
   periods: PeriodRadar[];
   trends: DimensionTrend[];
@@ -121,6 +122,8 @@ export interface GapAnalytics {
   assessmentId: string;
   periodName: string;
   studentId: string;
+  studentName: string;
+  scaleMax: number;
   dimensions: GapEntry[];
 }
 
@@ -139,14 +142,21 @@ export class AnalyticsService {
     studentId: string,
     requester: AuthenticatedUser,
   ): Promise<StudentAnalytics> {
-    await this.usersService.findOne(studentId);
+    const student = await this.usersService.findOne(studentId);
     await this.assertStudentAccess(studentId, requester);
 
     const assessments =
       await this.analyticsRepository.completedForStudent(studentId);
 
     if (assessments.length === 0) {
-      return { studentId, scaleMax: 0, periods: [], trends: [], latest: null };
+      return {
+        studentId,
+        studentName: student.name,
+        scaleMax: 0,
+        periods: [],
+        trends: [],
+        latest: null,
+      };
     }
 
     const scaleMax = await this.scaleMaxFor(assessments[0].period.cohortId);
@@ -167,7 +177,14 @@ export class AnalyticsService {
       scaleMax,
     );
 
-    return { studentId, scaleMax, periods, trends, latest };
+    return {
+      studentId,
+      studentName: student.name,
+      scaleMax,
+      periods,
+      trends,
+      latest,
+    };
   }
 
   // ─────────────────────────── Cohort ───────────────────────────
@@ -268,6 +285,8 @@ export class AnalyticsService {
       assessmentId,
       periodName: assessment.period.name,
       studentId: assessment.studentId,
+      studentName: assessment.student.name,
+      scaleMax: await this.scaleMaxFor(assessment.period.cohortId),
       dimensions: this.gapEntries(assessment),
     };
   }

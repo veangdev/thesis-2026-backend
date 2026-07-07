@@ -12,6 +12,7 @@ export class AuditRepository {
 
   findAll(params?: { skip?: number; take?: number }): Promise<AuditLog[]> {
     return this.prisma.auditLog.findMany({
+      include: { actor: { select: { id: true, name: true } } },
       orderBy: { createdAt: 'desc' },
       skip: params?.skip,
       take: params?.take,
