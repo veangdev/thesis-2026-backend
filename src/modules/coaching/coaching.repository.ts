@@ -19,6 +19,7 @@ const SAFE_USER_SELECT = {
 } as const;
 
 const SESSION_INCLUDE = {
+  facilitator: { select: SAFE_USER_SELECT },
   participants: { include: { user: { select: SAFE_USER_SELECT } } },
   targetDimensions: { include: { dimension: true } },
   actionItems: true,
