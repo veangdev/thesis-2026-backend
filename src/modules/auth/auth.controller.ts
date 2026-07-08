@@ -80,11 +80,11 @@ export class AuthController {
   @Throttle(AUTH_THROTTLE)
   @Post('reset-password')
   @HttpCode(HttpStatus.NO_CONTENT)
-  @ApiOperation({ summary: 'Set a new password using a reset token' })
+  @ApiOperation({ summary: 'Set a new password using an emailed reset code' })
   @ApiNoContentResponse({ description: 'Password updated' })
-  @ApiUnauthorizedResponse({ description: 'Invalid or expired reset token' })
+  @ApiUnauthorizedResponse({ description: 'Invalid or expired code' })
   resetPassword(@Body() dto: ResetPasswordDto): Promise<void> {
-    return this.authService.resetPassword(dto.token, dto.newPassword);
+    return this.authService.resetPassword(dto.email, dto.otp, dto.newPassword);
   }
 
   @Get('me')
