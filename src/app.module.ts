@@ -19,6 +19,7 @@ import { AnalyticsModule } from './modules/analytics/analytics.module';
 import { GoalsModule } from './modules/goals/goals.module';
 import { CoachingModule } from './modules/coaching/coaching.module';
 import { AuditModule } from './modules/audit/audit.module';
+import { SettingsModule } from './modules/settings/settings.module';
 
 @Module({
   imports: [
@@ -48,6 +49,7 @@ import { AuditModule } from './modules/audit/audit.module';
     GoalsModule,
     CoachingModule,
     AuditModule,
+    SettingsModule,
   ],
   controllers: [AppController],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],

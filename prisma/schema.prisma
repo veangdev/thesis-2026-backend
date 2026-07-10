@@ -95,6 +95,17 @@ model RefreshToken {
   @@map("refresh_tokens")
 }
 
+/// Program-wide notification toggles configured on the Settings screen. Keyed
+/// by a stable rule id (e.g. `assessment-open`); absent keys fall back to the
+/// UI's built-in default.
+model NotificationRule {
+  key       String   @id
+  enabled   Boolean  @default(true)
+  updatedAt DateTime @updatedAt
+
+  @@map("notification_rules")
+}
+
 /// One-time numeric codes emailed to users (password reset, email verification,
 /// login, …). The plaintext code is never stored — only a hash — and each code
 /// is single-use, expires, and is scoped by `purpose` so one table serves every
