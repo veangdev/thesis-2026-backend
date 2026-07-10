@@ -1,4 +1,8 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { PeriodsRepository } from './periods.repository';
 import { CohortsService } from '../cohorts/cohorts.service';
 import { AssessmentsService } from '../assessments/assessments.service';
@@ -63,5 +67,19 @@ export class PeriodsService {
     }
 
     return updated;
+  }
+
+  /**
+   * Deletes a period. Only `upcoming` periods can be removed — once a cycle is
+   * opened it has generated assessments and scores that must be preserved.
+   */
+  async remove(id: string): Promise<void> {
+    const period = await this.findOne(id);
+    if (period.status !== AssessmentPeriodStatus.upcoming) {
+      throw new BadRequestException(
+        'Only upcoming periods can be deleted; open or completed cycles are kept for their assessment history.',
+      );
+    }
+    await this.periodsRepository.delete(id);
   }
 }

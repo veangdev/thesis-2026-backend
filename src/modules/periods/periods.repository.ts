@@ -27,4 +27,8 @@ export class PeriodsRepository {
   ): Promise<AssessmentPeriod> {
     return this.prisma.assessmentPeriod.update({ where: { id }, data });
   }
+
+  delete(id: string): Promise<AssessmentPeriod> {
+    return this.prisma.assessmentPeriod.delete({ where: { id } });
+  }
 }
