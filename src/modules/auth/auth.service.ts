@@ -2,9 +2,11 @@ import { Injectable, Logger, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcryptjs';
-import { createHash, randomUUID } from 'crypto';
+import { createHash, randomInt, randomUUID } from 'crypto';
 import { UsersService } from '../users/users.service';
 import { RefreshTokenRepository } from './refresh-token.repository';
+import { OtpCodeRepository } from './otp-code.repository';
+import { MailService } from '../mail/mail.service';
 import { LoginDto } from './dto/login.dto';
 import { Role } from '../../common/enums';
 import { AuthenticatedUser } from '../../common/interfaces';
@@ -15,16 +17,12 @@ interface JwtPayload {
   role: Role;
 }
 
-interface ResetPayload {
-  sub: string;
-  purpose: typeof PASSWORD_RESET_PURPOSE;
-}
-
 /** Matches the `ms`-style duration strings accepted by @nestjs/jwt. */
 type JwtExpiry = `${number}${'s' | 'm' | 'h' | 'd' | 'w' | 'y'}`;
 
-const PASSWORD_RESET_PURPOSE = 'password_reset';
-const PASSWORD_RESET_EXPIRES_IN: JwtExpiry = '1h';
+/** Password-reset one-time code: 6 digits, valid for 10 minutes, single-use. */
+const OTP_LENGTH = 6;
+const OTP_TTL_MS = 10 * 60 * 1000;
 
 export interface AuthResult {
   accessToken: string;
@@ -41,6 +39,8 @@ export class AuthService {
     private readonly jwtService: JwtService,
     private readonly config: ConfigService,
     private readonly refreshTokens: RefreshTokenRepository,
+    private readonly otpCodes: OtpCodeRepository,
+    private readonly mailService: MailService,
   ) {}
 
   async login(dto: LoginDto): Promise<AuthResult> {
@@ -90,45 +90,68 @@ export class AuthService {
   }
 
   /**
-   * Issues a single-use password reset token. Always resolves (even for an
-   * unknown email) so the endpoint never reveals which accounts exist. In
-   * non-production environments the token is logged for manual testing.
+   * Emails a single-use, 6-digit reset code. Always resolves (even for an
+   * unknown email) so the endpoint never reveals which accounts exist. Any
+   * previously issued codes for the account are invalidated first. In
+   * non-production environments the code is also logged for manual testing.
    */
   async forgotPassword(email: string): Promise<void> {
     const user = await this.usersService.findByEmail(email);
     if (!user) return;
 
-    const token = await this.jwtService.signAsync(
-      { sub: user.id, purpose: PASSWORD_RESET_PURPOSE },
-      {
-        secret: this.config.getOrThrow<string>('jwt.accessSecret'),
-        expiresIn: PASSWORD_RESET_EXPIRES_IN,
-      },
-    );
+    await this.otpCodes.invalidateAll(user.id, 'password_reset');
+
+    const code = this.generateOtp();
+    await this.otpCodes.create({
+      userId: user.id,
+      purpose: 'password_reset',
+      codeHash: this.hashToken(code),
+      expiresAt: new Date(Date.now() + OTP_TTL_MS),
+    });
+
+    // Send without blocking the response: keeps the endpoint fast and its
+    // timing constant, so it can't be used to probe which emails exist.
+    void this.mailService
+      .sendPasswordResetOtp(user.email, code)
+      .catch((err) =>
+        this.logger.error(
+          `Failed to send password reset email to ${user.email}`,
+          err instanceof Error ? err.stack : String(err),
+        ),
+      );
 
     if (this.config.get<string>('nodeEnv') !== 'production') {
-      this.logger.log(`Password reset token for ${email}: ${token}`);
+      this.logger.log(`Password reset code for ${email}: ${code}`);
     }
   }
 
-  /** Validates a reset token, sets the new password, and revokes all sessions. */
-  async resetPassword(token: string, newPassword: string): Promise<void> {
-    let payload: ResetPayload;
-    try {
-      payload = await this.jwtService.verifyAsync<ResetPayload>(token, {
-        secret: this.config.getOrThrow<string>('jwt.accessSecret'),
-      });
-    } catch {
-      throw new UnauthorizedException('Invalid or expired reset token');
-    }
+  /**
+   * Validates an emailed reset code, sets the new password, consumes the code,
+   * and revokes all sessions. Errors are deliberately generic so a caller can't
+   * distinguish an unknown email from a wrong/expired code.
+   */
+  async resetPassword(
+    email: string,
+    otp: string,
+    newPassword: string,
+  ): Promise<void> {
+    const user = await this.usersService.findByEmail(email);
+    if (!user) throw new UnauthorizedException('Invalid or expired code');
 
-    if (payload.purpose !== PASSWORD_RESET_PURPOSE) {
-      throw new UnauthorizedException('Invalid or expired reset token');
-    }
+    const active = await this.otpCodes.findActive(user.id, 'password_reset');
+    const codeHash = this.hashToken(otp);
+    const match = active.find((otpRecord) => otpRecord.codeHash === codeHash);
+    if (!match) throw new UnauthorizedException('Invalid or expired code');
 
-    await this.usersService.updatePassword(payload.sub, newPassword);
+    await this.otpCodes.consume(match.id);
+    await this.usersService.updatePassword(user.id, newPassword);
     // Force re-authentication everywhere after a password change.
-    await this.refreshTokens.revokeAllForUser(payload.sub);
+    await this.refreshTokens.revokeAllForUser(user.id);
+  }
+
+  /** Cryptographically random, zero-padded numeric code. */
+  private generateOtp(): string {
+    return String(randomInt(0, 10 ** OTP_LENGTH)).padStart(OTP_LENGTH, '0');
   }
 
   private async issueTokens(user: AuthenticatedUser): Promise<AuthResult> {

@@ -10,6 +10,14 @@ export interface AppConfig {
     refreshExpiresIn: string;
   };
   cors: { origins: string[] };
+  mail: {
+    host: string;
+    port: number;
+    secure: boolean;
+    user: string;
+    pass: string;
+    from: string;
+  };
 }
 
 export default (): AppConfig => ({
@@ -30,5 +38,15 @@ export default (): AppConfig => ({
       .split(',')
       .map((origin) => origin.trim())
       .filter(Boolean),
+  },
+  mail: {
+    host: process.env.SMTP_HOST ?? '',
+    port: parseInt(process.env.SMTP_PORT ?? '587', 10),
+    secure: process.env.SMTP_SECURE === 'true',
+    user: process.env.SMTP_USER ?? '',
+    pass: process.env.SMTP_PASS ?? '',
+    from:
+      process.env.MAIL_FROM ??
+      'PNC Journey Star <no-reply@journey-star.pnc.edu>',
   },
 });

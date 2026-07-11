@@ -3,9 +3,12 @@ import { UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcryptjs';
+import { createHash } from 'crypto';
 import { AuthService } from './auth.service';
 import { UsersService } from '../users/users.service';
 import { RefreshTokenRepository } from './refresh-token.repository';
+import { OtpCodeRepository } from './otp-code.repository';
+import { MailService } from '../mail/mail.service';
 import { Role } from '../../common/enums';
 
 describe('AuthService', () => {
@@ -32,6 +35,16 @@ describe('AuthService', () => {
     revoke: jest.fn(),
     revokeAllForUser: jest.fn(),
     pruneForUser: jest.fn(),
+  };
+  const otpCodes = {
+    create: jest.fn(),
+    findActive: jest.fn(),
+    consume: jest.fn(),
+    invalidateAll: jest.fn(),
+  };
+  const mailService = {
+    // Returns a promise because the service fires it and chains `.catch()`.
+    sendPasswordResetOtp: jest.fn().mockResolvedValue(undefined),
   };
 
   const safeUser = {
@@ -62,6 +75,8 @@ describe('AuthService', () => {
         { provide: JwtService, useValue: jwtService },
         { provide: ConfigService, useValue: config },
         { provide: RefreshTokenRepository, useValue: refreshTokens },
+        { provide: OtpCodeRepository, useValue: otpCodes },
+        { provide: MailService, useValue: mailService },
       ],
     }).compile();
 
@@ -165,34 +180,49 @@ describe('AuthService', () => {
   });
 
   describe('forgotPassword', () => {
-    it('signs a reset token for a known email', async () => {
+    it('issues and emails a code for a known email', async () => {
       usersService.findByEmail.mockResolvedValue({ ...safeUser });
+      otpCodes.invalidateAll.mockResolvedValue({ count: 0 });
+
       await service.forgotPassword(safeUser.email);
-      expect(jwtService.signAsync).toHaveBeenCalledWith(
-        expect.objectContaining({
-          sub: safeUser.id,
-          purpose: 'password_reset',
-        }),
-        expect.any(Object),
+
+      expect(otpCodes.invalidateAll).toHaveBeenCalledWith(
+        safeUser.id,
+        'password_reset',
+      );
+      expect(otpCodes.create).toHaveBeenCalledTimes(1);
+      const [{ userId, purpose, codeHash }] = otpCodes.create.mock.calls[0];
+      expect(userId).toBe(safeUser.id);
+      expect(purpose).toBe('password_reset');
+      // Only the hash is persisted — never the plaintext code.
+      expect(codeHash).toMatch(/^[a-f0-9]{64}$/);
+      expect(mailService.sendPasswordResetOtp).toHaveBeenCalledWith(
+        safeUser.email,
+        expect.stringMatching(/^\d{6}$/),
       );
     });
 
     it('is a no-op for an unknown email (no account enumeration)', async () => {
       usersService.findByEmail.mockResolvedValue(null);
       await service.forgotPassword('nobody@pnc.edu');
-      expect(jwtService.signAsync).not.toHaveBeenCalled();
+      expect(otpCodes.create).not.toHaveBeenCalled();
+      expect(mailService.sendPasswordResetOtp).not.toHaveBeenCalled();
     });
   });
 
   describe('resetPassword', () => {
-    it('updates the password and revokes sessions for a valid token', async () => {
-      jwtService.verifyAsync.mockResolvedValue({
-        sub: safeUser.id,
-        purpose: 'password_reset',
-      });
+    const codeHashOf = (code: string) =>
+      createHash('sha256').update(code).digest('hex');
 
-      await service.resetPassword('reset-token', 'NewPassword123!');
+    it('updates the password, consumes the code, and revokes sessions', async () => {
+      usersService.findByEmail.mockResolvedValue({ ...safeUser });
+      otpCodes.findActive.mockResolvedValue([
+        { id: 'otp-1', codeHash: codeHashOf('123456') },
+      ]);
 
+      await service.resetPassword(safeUser.email, '123456', 'NewPassword123!');
+
+      expect(otpCodes.consume).toHaveBeenCalledWith('otp-1');
       expect(usersService.updatePassword).toHaveBeenCalledWith(
         safeUser.id,
         'NewPassword123!',
@@ -200,21 +230,21 @@ describe('AuthService', () => {
       expect(refreshTokens.revokeAllForUser).toHaveBeenCalledWith(safeUser.id);
     });
 
-    it('throws when the token has the wrong purpose', async () => {
-      jwtService.verifyAsync.mockResolvedValue({
-        sub: safeUser.id,
-        purpose: 'access',
-      });
+    it('throws when the code does not match any active code', async () => {
+      usersService.findByEmail.mockResolvedValue({ ...safeUser });
+      otpCodes.findActive.mockResolvedValue([
+        { id: 'otp-1', codeHash: codeHashOf('000000') },
+      ]);
       await expect(
-        service.resetPassword('bad', 'NewPassword123!'),
+        service.resetPassword(safeUser.email, '999999', 'NewPassword123!'),
       ).rejects.toThrow(UnauthorizedException);
       expect(usersService.updatePassword).not.toHaveBeenCalled();
     });
 
-    it('throws when the token is invalid', async () => {
-      jwtService.verifyAsync.mockRejectedValue(new Error('bad token'));
+    it('throws for an unknown email', async () => {
+      usersService.findByEmail.mockResolvedValue(null);
       await expect(
-        service.resetPassword('bad', 'NewPassword123!'),
+        service.resetPassword('nobody@pnc.edu', '123456', 'NewPassword123!'),
       ).rejects.toThrow(UnauthorizedException);
     });
   });

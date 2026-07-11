@@ -66,6 +66,7 @@ model User {
   updatedAt     DateTime @updatedAt
 
   refreshTokens           RefreshToken[]
+  otpCodes                OtpCode[]
   cohortMemberships       CohortMember[]
   facilitatorAssignments  MentorAssignment[]    @relation("FacilitatorAssignments")
   selfAssessorAssignments MentorAssignment[]    @relation("SelfAssessorAssignments")
@@ -92,6 +93,25 @@ model RefreshToken {
 
   @@index([userId])
   @@map("refresh_tokens")
+}
+
+/// One-time numeric codes emailed to users (password reset, email verification,
+/// login, …). The plaintext code is never stored — only a hash — and each code
+/// is single-use, expires, and is scoped by `purpose` so one table serves every
+/// OTP feature.
+model OtpCode {
+  id         String    @id @default(cuid())
+  userId     String
+  purpose    String
+  codeHash   String
+  expiresAt  DateTime
+  consumedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, purpose])
+  @@map("otp_codes")
 }
 
 // ─────────────────────────────── Cohorts ───────────────────────────────

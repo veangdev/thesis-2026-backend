@@ -1,7 +1,18 @@
-import { Body, Controller, Get, Param, Patch, Post } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  HttpCode,
+  HttpStatus,
+  Param,
+  Patch,
+  Post,
+} from '@nestjs/common';
 import {
   ApiBearerAuth,
   ApiForbiddenResponse,
+  ApiNoContentResponse,
   ApiOkResponse,
   ApiOperation,
   ApiTags,
@@ -56,5 +67,16 @@ export class PeriodsController {
     @Body() dto: UpdatePeriodDto,
   ): Promise<AssessmentPeriod> {
     return this.periodsService.update(id, dto);
+  }
+
+  @Delete('periods/:id')
+  @Roles(Role.program_coordinator)
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({
+    summary: 'Delete an upcoming assessment period (Program Coordinator)',
+  })
+  @ApiNoContentResponse({ description: 'Period deleted' })
+  remove(@Param('id') id: string): Promise<void> {
+    return this.periodsService.remove(id);
   }
 }
