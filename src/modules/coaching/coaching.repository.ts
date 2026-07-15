@@ -22,7 +22,10 @@ const SESSION_INCLUDE = {
   facilitator: { select: SAFE_USER_SELECT },
   participants: { include: { user: { select: SAFE_USER_SELECT } } },
   targetDimensions: { include: { dimension: true } },
-  actionItems: true,
+  actionItems: {
+    include: { assignee: { select: { id: true, name: true } } },
+    orderBy: { createdAt: 'asc' },
+  },
 } satisfies Prisma.CoachingSessionInclude;
 
 export type SessionWithRelations = Prisma.CoachingSessionGetPayload<{
@@ -40,6 +43,7 @@ export class CoachingRepository {
     scheduledAt: Date;
     durationMinutes: number;
     notes?: string;
+    followUpAt?: Date;
     participantIds: string[];
     dimensionIds: string[];
   }): Promise<SessionWithRelations> {
@@ -51,6 +55,7 @@ export class CoachingRepository {
         scheduledAt: params.scheduledAt,
         durationMinutes: params.durationMinutes,
         notes: params.notes,
+        followUpAt: params.followUpAt,
         participants: {
           create: params.participantIds.map((userId) => ({ userId })),
         },
@@ -105,7 +110,10 @@ export class CoachingRepository {
   addActionItem(
     data: Prisma.ActionItemUncheckedCreateInput,
   ): Promise<ActionItem> {
-    return this.prisma.actionItem.create({ data });
+    return this.prisma.actionItem.create({
+      data,
+      include: { assignee: { select: { id: true, name: true } } },
+    });
   }
 
   findActionItem(id: string): Promise<ActionItem | null> {
@@ -116,7 +124,11 @@ export class CoachingRepository {
     id: string,
     data: Prisma.ActionItemUncheckedUpdateInput,
   ): Promise<ActionItem> {
-    return this.prisma.actionItem.update({ where: { id }, data });
+    return this.prisma.actionItem.update({
+      where: { id },
+      data,
+      include: { assignee: { select: { id: true, name: true } } },
+    });
   }
 
   deleteActionItem(id: string): Promise<ActionItem> {

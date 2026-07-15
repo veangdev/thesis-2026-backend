@@ -17,6 +17,11 @@ export class CreateActionItemDto {
   @IsDateString()
   @IsOptional()
   dueDate?: string;
+
+  @ApiPropertyOptional({ description: 'User id to assign this item to' })
+  @IsString()
+  @IsOptional()
+  assigneeId?: string;
 }
 
 export class UpdateActionItemDto {
@@ -34,4 +39,9 @@ export class UpdateActionItemDto {
   @IsBoolean()
   @IsOptional()
   done?: boolean;
+
+  @ApiPropertyOptional({ description: 'User id to assign this item to' })
+  @IsString()
+  @IsOptional()
+  assigneeId?: string;
 }
