@@ -1,5 +1,5 @@
-import { ApiProperty } from '@nestjs/swagger';
-import { IsNotEmpty, IsString } from 'class-validator';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { IsNotEmpty, IsOptional, IsString } from 'class-validator';
 
 export class CreateAssignmentDto {
   @ApiProperty({ description: 'Facilitator (mentor) user id' })
@@ -12,8 +12,11 @@ export class CreateAssignmentDto {
   @IsNotEmpty()
   selfAssessorId: string;
 
-  @ApiProperty({ description: 'Cohort the assignment belongs to' })
+  @ApiPropertyOptional({
+    description:
+      "Cohort the assignment belongs to. Defaults to the student's cohort when omitted.",
+  })
   @IsString()
-  @IsNotEmpty()
-  cohortId: string;
+  @IsOptional()
+  cohortId?: string;
 }

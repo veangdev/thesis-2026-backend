@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   ForbiddenException,
   Get,
   HttpCode,
@@ -13,6 +14,7 @@ import {
   ApiBearerAuth,
   ApiCreatedResponse,
   ApiForbiddenResponse,
+  ApiNoContentResponse,
   ApiOkResponse,
   ApiOperation,
   ApiTags,
@@ -42,6 +44,15 @@ export class AssignmentsController {
   @ApiCreatedResponse({ description: 'The created assignment' })
   create(@Body() dto: CreateAssignmentDto): Promise<MentorAssignment> {
     return this.assignmentsService.create(dto);
+  }
+
+  @Delete('assignments/:id')
+  @Roles(Role.program_coordinator)
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({ summary: 'Remove a mentor↔student assignment (Coordinator)' })
+  @ApiNoContentResponse({ description: 'Assignment removed' })
+  remove(@Param('id') id: string): Promise<void> {
+    return this.assignmentsService.remove(id);
   }
 
   @Get('assignments')

@@ -1,4 +1,8 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { AssignmentsRepository } from './assignments.repository';
 import { UsersService } from '../users/users.service';
 import { CohortsService } from '../cohorts/cohorts.service';
@@ -31,13 +35,31 @@ export class AssignmentsService {
       throw new BadRequestException('selfAssessorId must be a self-assessor');
     }
 
-    await this.cohortsService.findOne(dto.cohortId);
+    // Assignments are cohort-scoped. The UI assigns by facilitator + student
+    // without a cohort, so default to the student's cohort when omitted.
+    const cohortId =
+      dto.cohortId ??
+      (await this.assignmentsRepository.cohortIdForStudent(dto.selfAssessorId));
+    if (!cohortId) {
+      throw new BadRequestException(
+        'Student is not enrolled in a cohort; provide a cohortId explicitly.',
+      );
+    }
+    await this.cohortsService.findOne(cohortId);
 
     return this.assignmentsRepository.create({
       facilitatorId: dto.facilitatorId,
       selfAssessorId: dto.selfAssessorId,
-      cohortId: dto.cohortId,
+      cohortId,
     });
+  }
+
+  async remove(id: string): Promise<void> {
+    const assignment = await this.assignmentsRepository.findById(id);
+    if (!assignment) {
+      throw new NotFoundException(`Assignment ${id} not found`);
+    }
+    await this.assignmentsRepository.delete(id);
   }
 
   async findAll(

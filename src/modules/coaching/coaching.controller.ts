@@ -128,4 +128,16 @@ export class CoachingController {
   ): Promise<ActionItem> {
     return this.coachingService.updateActionItem(id, dto, user);
   }
+
+  @Delete('action-items/:id')
+  @Roles(Role.program_coordinator, Role.facilitator)
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({ summary: 'Delete an action item' })
+  @ApiNoContentResponse({ description: 'Action item deleted' })
+  removeActionItem(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<void> {
+    return this.coachingService.removeActionItem(id, user);
+  }
 }

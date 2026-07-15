@@ -28,6 +28,23 @@ export class AssignmentsRepository {
     return this.prisma.mentorAssignment.create({ data });
   }
 
+  findById(id: string): Promise<MentorAssignment | null> {
+    return this.prisma.mentorAssignment.findUnique({ where: { id } });
+  }
+
+  delete(id: string): Promise<MentorAssignment> {
+    return this.prisma.mentorAssignment.delete({ where: { id } });
+  }
+
+  /** The cohort a student belongs to (assignments are cohort-scoped). */
+  async cohortIdForStudent(userId: string): Promise<string | null> {
+    const row = await this.prisma.cohortMember.findFirst({
+      where: { userId },
+      select: { cohortId: true },
+    });
+    return row?.cohortId ?? null;
+  }
+
   findAll(params?: {
     skip?: number;
     take?: number;

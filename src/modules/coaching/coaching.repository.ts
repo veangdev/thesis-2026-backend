@@ -119,6 +119,10 @@ export class CoachingRepository {
     return this.prisma.actionItem.update({ where: { id }, data });
   }
 
+  deleteActionItem(id: string): Promise<ActionItem> {
+    return this.prisma.actionItem.delete({ where: { id } });
+  }
+
   async activeStudentIdsInCohort(cohortId: string): Promise<string[]> {
     const rows = await this.prisma.cohortMember.findMany({
       where: { cohortId, user: { role: 'self_assessor', isActive: true } },
