@@ -9,12 +9,15 @@ describe('UsersService', () => {
 
   const repo = {
     create: jest.fn(),
+    createMany: jest.fn(),
     findAll: jest.fn(),
     count: jest.fn(),
     findById: jest.fn(),
     findByEmail: jest.fn(),
     update: jest.fn(),
     delete: jest.fn(),
+    cohortExists: jest.fn(),
+    setCohort: jest.fn(),
   };
 
   const userRecord = {
@@ -42,6 +45,8 @@ describe('UsersService', () => {
     it('hashes the password and never returns it', async () => {
       repo.findByEmail.mockResolvedValue(null);
       repo.create.mockResolvedValue(userRecord);
+      // create() re-reads the user through findOne to include the cohort.
+      repo.findById.mockResolvedValue(userRecord);
 
       const result = await service.create({
         name: 'Jane',
