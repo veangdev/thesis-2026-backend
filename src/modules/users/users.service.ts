@@ -23,10 +23,13 @@ export class UsersService {
     const existing = await this.usersRepository.findByEmail(dto.email);
     if (existing) throw new ConflictException('Email already in use');
 
-    const { password, ...rest } = dto;
+    const { password, cohortId, ...rest } = dto;
+    // Validate the cohort before creating so a bad id can't orphan a new user.
+    if (cohortId) await this.assertCohortExists(cohortId);
     const passwordHash = await bcrypt.hash(password, SALT_ROUNDS);
     const user = await this.usersRepository.create({ ...rest, passwordHash });
-    return this.sanitize(user);
+    if (cohortId) await this.usersRepository.setCohort(user.id, cohortId);
+    return this.findOne(user.id);
   }
 
   async findAll(query: UserQueryDto): Promise<Paginated<AuthenticatedUser>> {
@@ -49,18 +52,22 @@ export class UsersService {
     );
   }
 
-  /** Bulk-create users, optionally adding each to a cohort — atomic. */
+  /**
+   * Bulk-create users — atomic. `cohortId` is a relation (not a User column),
+   * so it's pulled out of each record and each user is enrolled into their own
+   * cohort (falling back to the batch-level `cohortId` when a row omits one).
+   */
   async createMany(dto: BulkCreateUsersDto): Promise<AuthenticatedUser[]> {
     const records = await Promise.all(
-      dto.users.map(async ({ password, ...rest }) => ({
-        ...rest,
-        passwordHash: await bcrypt.hash(password, SALT_ROUNDS),
+      dto.users.map(async ({ password, cohortId, ...rest }) => ({
+        data: {
+          ...rest,
+          passwordHash: await bcrypt.hash(password, SALT_ROUNDS),
+        },
+        cohortId: cohortId ?? dto.cohortId,
       })),
     );
-    const created = await this.usersRepository.createMany(
-      records,
-      dto.cohortId,
-    );
+    const created = await this.usersRepository.createMany(records);
     return created.map((user) => this.sanitize(user));
   }
 
@@ -95,8 +102,16 @@ export class UsersService {
 
   async update(id: string, dto: UpdateUserDto): Promise<AuthenticatedUser> {
     await this.findOne(id);
-    const user = await this.usersRepository.update(id, dto);
-    return this.sanitize(user);
+    const { cohortId, ...rest } = dto;
+    if (cohortId) await this.assertCohortExists(cohortId);
+    await this.usersRepository.update(id, rest);
+    if (cohortId) await this.usersRepository.setCohort(id, cohortId);
+    return this.findOne(id);
+  }
+
+  private async assertCohortExists(cohortId: string): Promise<void> {
+    const exists = await this.usersRepository.cohortExists(cohortId);
+    if (!exists) throw new NotFoundException(`Cohort ${cohortId} not found`);
   }
 
   async remove(id: string): Promise<void> {
@@ -110,10 +125,22 @@ export class UsersService {
     await this.usersRepository.update(id, { passwordHash });
   }
 
-  /** Strips the password hash so it can never leak through a response. */
-  private sanitize(user: User): AuthenticatedUser {
-    const { passwordHash: _passwordHash, ...safe } = user;
+  /**
+   * Strips the password hash so it can never leak through a response, and
+   * flattens the user's cohort membership onto `cohortId`/`cohortName`.
+   */
+  private sanitize(
+    user: User & {
+      cohortMemberships?: Array<{ cohort: { id: string; name: string } }>;
+    },
+  ): AuthenticatedUser {
+    const { passwordHash: _passwordHash, cohortMemberships, ...safe } = user;
     void _passwordHash;
-    return safe;
+    const cohort = cohortMemberships?.[0]?.cohort ?? null;
+    return {
+      ...safe,
+      cohortId: cohort?.id ?? null,
+      cohortName: cohort?.name ?? null,
+    };
   }
 }

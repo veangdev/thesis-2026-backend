@@ -34,4 +34,9 @@ export class CreateUserDto {
   @IsBoolean()
   @IsOptional()
   isActive?: boolean;
+
+  @ApiPropertyOptional({ description: 'Cohort to enrol the user into' })
+  @IsString()
+  @IsOptional()
+  cohortId?: string;
 }
