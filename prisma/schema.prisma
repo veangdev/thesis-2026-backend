@@ -61,6 +61,8 @@ model User {
   role          Role     @default(self_assessor)
   avatarUrl     String?
   expertiseTags String[] @default([])
+  /// Days this facilitator is free to coach, as YYYY-MM-DD.
+  availability  String[] @default([])
   isActive      Boolean  @default(true)
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt

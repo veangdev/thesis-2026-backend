@@ -40,7 +40,9 @@ export class AssignmentsController {
   @Post('assignments')
   @Roles(Role.program_coordinator)
   @HttpCode(HttpStatus.CREATED)
-  @ApiOperation({ summary: 'Assign a facilitator to a student (Coordinator)' })
+  @ApiOperation({
+    summary: 'Assign a facilitator to a self-assessor (Coordinator)',
+  })
   @ApiCreatedResponse({ description: 'The created assignment' })
   create(@Body() dto: CreateAssignmentDto): Promise<MentorAssignment> {
     return this.assignmentsService.create(dto);
@@ -49,7 +51,9 @@ export class AssignmentsController {
   @Delete('assignments/:id')
   @Roles(Role.program_coordinator)
   @HttpCode(HttpStatus.NO_CONTENT)
-  @ApiOperation({ summary: 'Remove a mentor↔student assignment (Coordinator)' })
+  @ApiOperation({
+    summary: 'Remove a facilitator↔self-assessor assignment (Coordinator)',
+  })
   @ApiNoContentResponse({ description: 'Assignment removed' })
   remove(@Param('id') id: string): Promise<void> {
     return this.assignmentsService.remove(id);
@@ -57,7 +61,9 @@ export class AssignmentsController {
 
   @Get('assignments')
   @Roles(Role.program_coordinator)
-  @ApiOperation({ summary: 'List mentor↔student assignments (Coordinator)' })
+  @ApiOperation({
+    summary: 'List facilitator↔self-assessor assignments (Coordinator)',
+  })
   @ApiOkResponse({ description: 'Paginated assignments' })
   findAll(
     @Query() pagination: PaginationQueryDto,
@@ -65,10 +71,22 @@ export class AssignmentsController {
     return this.assignmentsService.findAll(pagination);
   }
 
+  @Get('users/me/facilitator')
+  @Roles(Role.self_assessor)
+  @ApiOperation({ summary: 'Get your own assigned facilitator' })
+  @ApiOkResponse({ description: 'The assigned facilitator, or null' })
+  myFacilitator(
+    @CurrentUser('id') userId: string,
+  ): Promise<AuthenticatedUser | null> {
+    return this.assignmentsService.facilitatorForStudent(userId);
+  }
+
   @Get('facilitators/:id/students')
   @Roles(Role.program_coordinator, Role.facilitator)
-  @ApiOperation({ summary: 'List the students assigned to a facilitator' })
-  @ApiOkResponse({ description: 'Assigned students (sanitized)' })
+  @ApiOperation({
+    summary: 'List the self-assessors assigned to a facilitator',
+  })
+  @ApiOkResponse({ description: 'Assigned self-assessors (sanitized)' })
   studentsForFacilitator(
     @Param('id') id: string,
     @CurrentUser() user: AuthenticatedUser,

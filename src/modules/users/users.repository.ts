@@ -80,8 +80,11 @@ export class UsersRepository {
     return this.prisma.user.findUnique({ where: { id }, include: WITH_COHORT });
   }
 
-  findByEmail(email: string): Promise<User | null> {
-    return this.prisma.user.findUnique({ where: { email } });
+  findByEmail(email: string): Promise<UserWithCohort | null> {
+    return this.prisma.user.findUnique({
+      where: { email },
+      include: WITH_COHORT,
+    });
   }
 
   update(id: string, data: Prisma.UserUpdateInput): Promise<User> {

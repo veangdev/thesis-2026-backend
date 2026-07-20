@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Delete,
@@ -10,9 +11,18 @@ import {
   Patch,
   Post,
   Query,
+  UploadedFile,
+  UseInterceptors,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { diskStorage } from 'multer';
+import { randomUUID } from 'crypto';
+import { existsSync, mkdirSync } from 'fs';
+import { extname, join } from 'path';
 import {
   ApiBearerAuth,
+  ApiBody,
+  ApiConsumes,
   ApiCreatedResponse,
   ApiForbiddenResponse,
   ApiNoContentResponse,
@@ -28,10 +38,18 @@ import { AuthenticatedUser } from '../../common/interfaces';
 import { UsersService } from './users.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
+import { UpdateMeDto } from './dto/update-me.dto';
 import { UserResponseDto } from './dto/user-response.dto';
 import { UserQueryDto } from './dto/user-query.dto';
 import { BulkCreateUsersDto } from './dto/bulk-create-users.dto';
 import { Paginated } from '../../common/dto/pagination.dto';
+
+/** Avatars are written to disk and served statically from `/uploads`. */
+const AVATAR_DIR = join(process.cwd(), 'uploads', 'avatars');
+if (!existsSync(AVATAR_DIR)) mkdirSync(AVATAR_DIR, { recursive: true });
+
+const MAX_AVATAR_BYTES = 2 * 1024 * 1024; // 2 MB
+const ALLOWED_AVATAR_TYPES = ['image/png', 'image/jpeg', 'image/webp'];
 
 @ApiTags('users')
 @ApiBearerAuth()
@@ -67,6 +85,62 @@ export class UsersController {
   @ApiOkResponse({ type: UserResponseDto, isArray: true })
   findAll(@Query() query: UserQueryDto): Promise<Paginated<UserResponseDto>> {
     return this.usersService.findAll(query);
+  }
+
+  // ─── Self-service ("me") routes — must precede the `:id` routes so that
+  // "me" is never matched as a user id. Any signed-in role may use them.
+
+  @Patch('me')
+  @ApiOperation({ summary: 'Update your own profile (name, expertise tags)' })
+  @ApiOkResponse({ type: UserResponseDto })
+  updateMe(
+    @CurrentUser('id') userId: string,
+    @Body() dto: UpdateMeDto,
+  ): Promise<UserResponseDto> {
+    return this.usersService.updateMe(userId, dto);
+  }
+
+  @Post('me/avatar')
+  @ApiOperation({ summary: 'Upload your own profile picture' })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: { file: { type: 'string', format: 'binary' } },
+    },
+  })
+  @ApiOkResponse({ type: UserResponseDto })
+  @UseInterceptors(
+    FileInterceptor('file', {
+      storage: diskStorage({
+        destination: AVATAR_DIR,
+        filename: (_req, file, callback) =>
+          callback(
+            null,
+            `${randomUUID()}${extname(file.originalname).toLowerCase()}`,
+          ),
+      }),
+      limits: { fileSize: MAX_AVATAR_BYTES },
+      fileFilter: (_req, file, callback) =>
+        ALLOWED_AVATAR_TYPES.includes(file.mimetype)
+          ? callback(null, true)
+          : callback(
+              new BadRequestException(
+                'Avatar must be a PNG, JPEG or WebP image',
+              ),
+              false,
+            ),
+    }),
+  )
+  uploadAvatar(
+    @CurrentUser('id') userId: string,
+    @UploadedFile() file?: Express.Multer.File,
+  ): Promise<UserResponseDto> {
+    if (!file) throw new BadRequestException('No image file was uploaded');
+    return this.usersService.setAvatar(
+      userId,
+      `/uploads/avatars/${file.filename}`,
+    );
   }
 
   @Get(':id')

@@ -21,6 +21,13 @@ export class UserResponseDto {
   @ApiProperty({ type: [String], example: [] })
   expertiseTags: string[];
 
+  @ApiProperty({
+    type: [String],
+    example: ['2026-07-21'],
+    description: 'Facilitator coaching availability, as YYYY-MM-DD',
+  })
+  availability: string[];
+
   @ApiProperty({ example: true })
   isActive: boolean;
 

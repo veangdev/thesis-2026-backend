@@ -11,6 +11,7 @@ const SAFE_USER_SELECT = {
   role: true,
   avatarUrl: true,
   expertiseTags: true,
+  availability: true,
   isActive: true,
   createdAt: true,
   updatedAt: true,

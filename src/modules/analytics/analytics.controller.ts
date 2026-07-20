@@ -29,9 +29,9 @@ export class AnalyticsController {
 
   @Get('student/:id')
   @ApiOperation({
-    summary: 'Radar per period, trends, gaps and zones for one student',
+    summary: 'Radar per period, trends, gaps and zones for one self-assessor',
   })
-  @ApiOkResponse({ description: 'Student growth analytics' })
+  @ApiOkResponse({ description: 'Self-assessor growth analytics' })
   student(
     @Param('id') id: string,
     @CurrentUser() user: AuthenticatedUser,
@@ -42,7 +42,8 @@ export class AnalyticsController {
   @Get('cohort/:id')
   @Roles(Role.program_coordinator, Role.facilitator)
   @ApiOperation({
-    summary: 'Heatmap, weakest dimensions, completion rates, at-risk students',
+    summary:
+      'Heatmap, weakest dimensions, completion rates, at-risk self-assessors',
   })
   @ApiOkResponse({ description: 'Cohort analytics' })
   cohort(@Param('id') id: string): Promise<CohortAnalytics> {
@@ -52,7 +53,7 @@ export class AnalyticsController {
   @Get('overview')
   @Roles(Role.program_coordinator)
   @ApiOperation({
-    summary: 'Program-wide KPIs and mentor workload (Coordinator)',
+    summary: 'Program-wide KPIs and facilitator workload (Coordinator)',
   })
   @ApiOkResponse({ description: 'Overview analytics' })
   overview(): Promise<OverviewAnalytics> {
@@ -60,8 +61,10 @@ export class AnalyticsController {
   }
 
   @Get('gap/:assessmentId')
-  @ApiOperation({ summary: 'Self vs mentor vs agreed score per dimension' })
-  @ApiOkResponse({ description: 'Self/mentor gap analysis' })
+  @ApiOperation({
+    summary: 'Self vs facilitator vs agreed score per dimension',
+  })
+  @ApiOkResponse({ description: 'Self/facilitator gap analysis' })
   gap(
     @Param('assessmentId') assessmentId: string,
     @CurrentUser() user: AuthenticatedUser,

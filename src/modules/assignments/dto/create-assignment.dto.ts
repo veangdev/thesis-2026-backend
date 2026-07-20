@@ -2,12 +2,12 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { IsNotEmpty, IsOptional, IsString } from 'class-validator';
 
 export class CreateAssignmentDto {
-  @ApiProperty({ description: 'Facilitator (mentor) user id' })
+  @ApiProperty({ description: 'Facilitator user id' })
   @IsString()
   @IsNotEmpty()
   facilitatorId: string;
 
-  @ApiProperty({ description: 'Self-assessor (student) user id' })
+  @ApiProperty({ description: 'Self-assessor user id' })
   @IsString()
   @IsNotEmpty()
   selfAssessorId: string;

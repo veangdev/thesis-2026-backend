@@ -5,7 +5,7 @@ import { AssessmentStatus } from '../../../common/enums';
 import { PaginationQueryDto } from '../../../common/dto/pagination.dto';
 
 export class AssessmentQueryDto extends PaginationQueryDto {
-  @ApiPropertyOptional({ description: 'Filter by student id' })
+  @ApiPropertyOptional({ description: 'Filter by self-assessor id' })
   @IsString()
   @IsOptional()
   studentId?: string;

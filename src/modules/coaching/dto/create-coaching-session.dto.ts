@@ -38,7 +38,8 @@ export class CreateCoachingSessionDto {
 
   @ApiPropertyOptional({
     type: [String],
-    description: 'Explicit participant student ids (for individual scope)',
+    description:
+      'Explicit participant self-assessor ids (for individual scope)',
   })
   @IsArray()
   @IsString({ each: true })

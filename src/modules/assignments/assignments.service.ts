@@ -89,6 +89,20 @@ export class AssignmentsService {
     return this.assignmentsRepository.isAssigned(facilitatorId, selfAssessorId);
   }
 
+  /**
+   * The facilitator assigned to a self-assessor, for their own profile.
+   * Returns null when nobody is assigned yet — that is a normal state, not an
+   * error, so the caller can render an empty row rather than handle a 404.
+   */
+  async facilitatorForStudent(
+    selfAssessorId: string,
+  ): Promise<AuthenticatedUser | null> {
+    const facilitatorId =
+      await this.assignmentsRepository.facilitatorIdForStudent(selfAssessorId);
+    if (!facilitatorId) return null;
+    return this.usersService.findOne(facilitatorId);
+  }
+
   facilitatorIdForStudent(selfAssessorId: string): Promise<string | null> {
     return this.assignmentsRepository.facilitatorIdForStudent(selfAssessorId);
   }

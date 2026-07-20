@@ -17,7 +17,9 @@ export class MentorScoreItemDto {
   @IsNotEmpty()
   dimensionId: string;
 
-  @ApiPropertyOptional({ description: 'Mentor score (1..cohort scale max)' })
+  @ApiPropertyOptional({
+    description: 'Facilitator score (1..cohort scale max)',
+  })
   @IsInt()
   @Min(1)
   @IsOptional()

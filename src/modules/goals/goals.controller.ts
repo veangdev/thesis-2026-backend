@@ -37,7 +37,7 @@ export class GoalsController {
 
   @Post()
   @HttpCode(HttpStatus.CREATED)
-  @ApiOperation({ summary: 'Create a goal (students create their own)' })
+  @ApiOperation({ summary: 'Create a goal (self-assessors create their own)' })
   @ApiCreatedResponse({ description: 'The created goal' })
   create(
     @Body() dto: CreateGoalDto,
