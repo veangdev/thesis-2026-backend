@@ -60,6 +60,8 @@ class EnvironmentVariables {
   @IsString()
   @IsOptional()
   CORS_ORIGIN?: string;
+  UPLOAD_DIR?: string;
+  UPLOAD_PUBLIC_PATH?: string;
 }
 
 export function validateEnv(

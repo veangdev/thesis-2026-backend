@@ -1,3 +1,5 @@
+import { join, resolve } from 'path';
+
 export interface AppConfig {
   nodeEnv: string;
   port: number;
@@ -10,6 +12,7 @@ export interface AppConfig {
     refreshExpiresIn: string;
   };
   cors: { origins: string[] };
+  uploads: { dir: string; publicPath: string };
   mail: {
     host: string;
     port: number;
@@ -19,6 +22,18 @@ export interface AppConfig {
     from: string;
   };
 }
+
+/**
+ * Where uploaded files live on disk. Configurable so the directory can be
+ * moved off the project — a mounted volume, a shared drive — without a code
+ * change. Relative values resolve against the process working directory.
+ */
+export const uploadsDir = (): string =>
+  resolve(process.env.UPLOAD_DIR ?? join(process.cwd(), 'uploads'));
+
+/** URL prefix those files are served under, e.g. `/uploads/avatars/x.png`. */
+export const uploadsPublicPath = (): string =>
+  process.env.UPLOAD_PUBLIC_PATH ?? '/uploads';
 
 export default (): AppConfig => ({
   nodeEnv: process.env.NODE_ENV ?? 'development',
@@ -38,6 +53,10 @@ export default (): AppConfig => ({
       .split(',')
       .map((origin) => origin.trim())
       .filter(Boolean),
+  },
+  uploads: {
+    dir: uploadsDir(),
+    publicPath: uploadsPublicPath(),
   },
   mail: {
     host: process.env.SMTP_HOST ?? '',

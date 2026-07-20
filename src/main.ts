@@ -3,8 +3,8 @@ import { ConfigService } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
-import { join } from 'path';
 import { ServerResponse } from 'http';
+import { uploadsDir, uploadsPublicPath } from './config/configuration';
 import { AppModule } from './app.module';
 import { setupApp } from './app.setup';
 
@@ -31,8 +31,8 @@ async function bootstrap() {
   // the frontend (a different origin) from rendering these images at all — the
   // request succeeds but the browser discards the response. Relax it to
   // `cross-origin` for uploads only, leaving the API's own headers untouched.
-  app.useStaticAssets(join(process.cwd(), 'uploads'), {
-    prefix: '/uploads',
+  app.useStaticAssets(uploadsDir(), {
+    prefix: uploadsPublicPath(),
     setHeaders: (res: ServerResponse) => {
       res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
     },

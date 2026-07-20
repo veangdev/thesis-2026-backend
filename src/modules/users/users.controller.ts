@@ -18,7 +18,8 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
 import { randomUUID } from 'crypto';
 import { existsSync, mkdirSync } from 'fs';
-import { extname, join } from 'path';
+import { join } from 'path';
+import { uploadsDir } from '../../config/configuration';
 import {
   ApiBearerAuth,
   ApiBody,
@@ -44,12 +45,29 @@ import { UserQueryDto } from './dto/user-query.dto';
 import { BulkCreateUsersDto } from './dto/bulk-create-users.dto';
 import { Paginated } from '../../common/dto/pagination.dto';
 
-/** Avatars are written to disk and served statically from `/uploads`. */
-const AVATAR_DIR = join(process.cwd(), 'uploads', 'avatars');
+/**
+ * Avatars live in an `avatars/` subdirectory of the configured upload root,
+ * so the whole tree can be relocated with UPLOAD_DIR alone.
+ */
+const AVATAR_DIR = join(uploadsDir(), 'avatars');
+/** Stored relative to the upload root; the public prefix is applied on read. */
+const AVATAR_RELATIVE_DIR = 'avatars';
 if (!existsSync(AVATAR_DIR)) mkdirSync(AVATAR_DIR, { recursive: true });
 
 const MAX_AVATAR_BYTES = 2 * 1024 * 1024; // 2 MB
-const ALLOWED_AVATAR_TYPES = ['image/png', 'image/jpeg', 'image/webp'];
+/**
+ * Allowed upload types mapped to the extension we will store them under.
+ * The extension is taken from this map rather than from the client's
+ * `originalname`: that value is attacker-controlled, so deriving from it lets
+ * a caller declare `image/png` while naming the file `x.html` and have the
+ * API serve attacker-authored HTML from its own origin.
+ */
+const AVATAR_EXTENSIONS: Record<string, string> = {
+  'image/png': '.png',
+  'image/jpeg': '.jpg',
+  'image/webp': '.webp',
+};
+const ALLOWED_AVATAR_TYPES = Object.keys(AVATAR_EXTENSIONS);
 
 @ApiTags('users')
 @ApiBearerAuth()
@@ -115,10 +133,7 @@ export class UsersController {
       storage: diskStorage({
         destination: AVATAR_DIR,
         filename: (_req, file, callback) =>
-          callback(
-            null,
-            `${randomUUID()}${extname(file.originalname).toLowerCase()}`,
-          ),
+          callback(null, `${randomUUID()}${AVATAR_EXTENSIONS[file.mimetype]}`),
       }),
       limits: { fileSize: MAX_AVATAR_BYTES },
       fileFilter: (_req, file, callback) =>
@@ -139,7 +154,7 @@ export class UsersController {
     if (!file) throw new BadRequestException('No image file was uploaded');
     return this.usersService.setAvatar(
       userId,
-      `/uploads/avatars/${file.filename}`,
+      `${AVATAR_RELATIVE_DIR}/${file.filename}`,
     );
   }
 
