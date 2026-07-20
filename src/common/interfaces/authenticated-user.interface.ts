@@ -11,7 +11,11 @@ export interface AuthenticatedUser {
   role: Role;
   avatarUrl: string | null;
   expertiseTags: string[];
+  availability: string[];
   isActive: boolean;
   createdAt: Date;
   updatedAt: Date;
+  /** The user's cohort, resolved from their membership (null if unenrolled). */
+  cohortId?: string | null;
+  cohortName?: string | null;
 }

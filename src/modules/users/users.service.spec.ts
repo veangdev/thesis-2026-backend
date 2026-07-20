@@ -9,12 +9,15 @@ describe('UsersService', () => {
 
   const repo = {
     create: jest.fn(),
+    createMany: jest.fn(),
     findAll: jest.fn(),
     count: jest.fn(),
     findById: jest.fn(),
     findByEmail: jest.fn(),
     update: jest.fn(),
     delete: jest.fn(),
+    cohortExists: jest.fn(),
+    setCohort: jest.fn(),
   };
 
   const userRecord = {
@@ -25,6 +28,7 @@ describe('UsersService', () => {
     role: Role.self_assessor,
     avatarUrl: null,
     expertiseTags: [],
+    availability: [],
     isActive: true,
     createdAt: new Date(),
     updatedAt: new Date(),
@@ -42,6 +46,8 @@ describe('UsersService', () => {
     it('hashes the password and never returns it', async () => {
       repo.findByEmail.mockResolvedValue(null);
       repo.create.mockResolvedValue(userRecord);
+      // create() re-reads the user through findOne to include the cohort.
+      repo.findById.mockResolvedValue(userRecord);
 
       const result = await service.create({
         name: 'Jane',
@@ -66,6 +72,80 @@ describe('UsersService', () => {
           password: 'password123',
         }),
       ).rejects.toThrow(ConflictException);
+    });
+  });
+
+  describe('updateMe', () => {
+    /** A day that is always in the future, so the prune never eats it. */
+    const future = (offsetDays: number) => {
+      const d = new Date();
+      d.setDate(d.getDate() + offsetDays);
+      const month = `${d.getMonth() + 1}`.padStart(2, '0');
+      const day = `${d.getDate()}`.padStart(2, '0');
+      return `${d.getFullYear()}-${month}-${day}`;
+    };
+
+    const asFacilitator = () =>
+      repo.findById.mockResolvedValue({
+        ...userRecord,
+        role: Role.facilitator,
+      });
+
+    it('drops coaching fields for a non-facilitator', async () => {
+      repo.findById.mockResolvedValue(userRecord); // self_assessor
+      repo.update.mockResolvedValue(userRecord);
+
+      await service.updateMe('user-1', {
+        name: 'Jane',
+        expertiseTags: ['Interviewing'],
+        availability: [future(1)],
+      });
+
+      expect(repo.update).toHaveBeenCalledWith('user-1', {
+        name: 'Jane',
+        expertiseTags: undefined,
+        availability: undefined,
+      });
+    });
+
+    it("dedupes, trims and orders a facilitator's tags", async () => {
+      asFacilitator();
+      repo.update.mockResolvedValue(userRecord);
+
+      await service.updateMe('user-1', {
+        expertiseTags: ['  Teamwork ', 'teamwork', 'Coaching', ''],
+      });
+
+      expect(repo.update).toHaveBeenCalledWith(
+        'user-1',
+        expect.objectContaining({ expertiseTags: ['Coaching', 'Teamwork'] }),
+      );
+    });
+
+    it('prunes past days and dedupes availability', async () => {
+      asFacilitator();
+      repo.update.mockResolvedValue(userRecord);
+
+      await service.updateMe('user-1', {
+        availability: [future(3), '2020-01-01', future(1), future(3)],
+      });
+
+      expect(repo.update).toHaveBeenCalledWith(
+        'user-1',
+        expect.objectContaining({ availability: [future(1), future(3)] }),
+      );
+    });
+
+    it('lets a facilitator clear their availability', async () => {
+      asFacilitator();
+      repo.update.mockResolvedValue(userRecord);
+
+      await service.updateMe('user-1', { availability: [] });
+
+      expect(repo.update).toHaveBeenCalledWith(
+        'user-1',
+        expect.objectContaining({ availability: [] }),
+      );
     });
   });
 

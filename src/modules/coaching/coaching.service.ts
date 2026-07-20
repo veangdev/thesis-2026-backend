@@ -37,6 +37,7 @@ export class CoachingService {
       scheduledAt: new Date(dto.scheduledAt),
       durationMinutes: dto.durationMinutes ?? 60,
       notes: dto.notes,
+      followUpAt: dto.followUpAt ? new Date(dto.followUpAt) : undefined,
       participantIds,
       dimensionIds: dto.targetDimensionIds ?? [],
     });
@@ -87,6 +88,7 @@ export class CoachingService {
       status: dto.status,
     };
     if (dto.scheduledAt) data.scheduledAt = new Date(dto.scheduledAt);
+    if (dto.followUpAt) data.followUpAt = new Date(dto.followUpAt);
 
     const updated = await this.coachingRepository.update(id, data);
     return updated;
@@ -109,6 +111,7 @@ export class CoachingService {
       sessionId,
       description: dto.description,
       dueDate: dto.dueDate ? new Date(dto.dueDate) : undefined,
+      assigneeId: dto.assigneeId,
     });
   }
 
@@ -125,9 +128,18 @@ export class CoachingService {
     const data: Prisma.ActionItemUncheckedUpdateInput = {
       description: dto.description,
       done: dto.done,
+      assigneeId: dto.assigneeId,
     };
     if (dto.dueDate) data.dueDate = new Date(dto.dueDate);
     return this.coachingRepository.updateActionItem(id, data);
+  }
+
+  async removeActionItem(id: string, user: AuthenticatedUser): Promise<void> {
+    const item = await this.coachingRepository.findActionItem(id);
+    if (!item) throw new NotFoundException(`Action item ${id} not found`);
+    const session = await this.getOrThrow(item.sessionId);
+    this.assertCanManage(session, user);
+    await this.coachingRepository.deleteActionItem(id);
   }
 
   // ─────────────────────────── Helpers ───────────────────────────

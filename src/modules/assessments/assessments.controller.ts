@@ -75,7 +75,9 @@ export class AssessmentsController {
   @Post(':id/self/submit')
   @Roles(Role.self_assessor)
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Submit the self-assessment for mentor review' })
+  @ApiOperation({
+    summary: 'Submit the self-assessment for facilitator review',
+  })
   @ApiOkResponse({ description: 'The submitted assessment' })
   submitSelf(
     @Param('id') id: string,
@@ -86,7 +88,9 @@ export class AssessmentsController {
 
   @Patch(':id/mentor')
   @Roles(Role.facilitator)
-  @ApiOperation({ summary: 'Save mentor scores, notes, and agreed scores' })
+  @ApiOperation({
+    summary: 'Save facilitator scores, notes, and agreed scores',
+  })
   @ApiOkResponse({ description: 'The updated assessment' })
   saveMentor(
     @Param('id') id: string,

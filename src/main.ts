@@ -1,7 +1,10 @@
 import { Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
+import { NestExpressApplication } from '@nestjs/platform-express';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import { ServerResponse } from 'http';
+import { uploadsDir, uploadsPublicPath } from './config/configuration';
 import { AppModule } from './app.module';
 import { setupApp } from './app.setup';
 
@@ -13,13 +16,27 @@ function logLevels(nodeEnv: string) {
 
 async function bootstrap() {
   const nodeEnv = process.env.NODE_ENV ?? 'development';
-  const app = await NestFactory.create(AppModule, {
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, {
     logger: [...logLevels(nodeEnv)],
   });
   const config = app.get(ConfigService);
   const logger = new Logger('Bootstrap');
 
   setupApp(app);
+
+  // Uploaded avatars are served outside the API prefix, e.g.
+  // GET /uploads/avatars/<file>.png
+  //
+  // Helmet defaults Cross-Origin-Resource-Policy to `same-origin`, which stops
+  // the frontend (a different origin) from rendering these images at all — the
+  // request succeeds but the browser discards the response. Relax it to
+  // `cross-origin` for uploads only, leaving the API's own headers untouched.
+  app.useStaticAssets(uploadsDir(), {
+    prefix: uploadsPublicPath(),
+    setHeaders: (res: ServerResponse) => {
+      res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+    },
+  });
 
   app.enableCors({
     origin: config.get<string[]>('cors.origins'),

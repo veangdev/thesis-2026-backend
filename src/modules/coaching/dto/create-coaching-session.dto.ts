@@ -38,7 +38,8 @@ export class CreateCoachingSessionDto {
 
   @ApiPropertyOptional({
     type: [String],
-    description: 'Explicit participant student ids (for individual scope)',
+    description:
+      'Explicit participant self-assessor ids (for individual scope)',
   })
   @IsArray()
   @IsString({ each: true })
@@ -58,4 +59,12 @@ export class CreateCoachingSessionDto {
   @IsString({ each: true })
   @IsOptional()
   targetDimensionIds?: string[];
+
+  @ApiPropertyOptional({
+    example: '2026-07-24T00:00:00.000Z',
+    description: 'Optional follow-up date',
+  })
+  @IsDateString()
+  @IsOptional()
+  followUpAt?: string;
 }

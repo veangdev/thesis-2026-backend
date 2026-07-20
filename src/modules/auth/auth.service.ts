@@ -1,4 +1,9 @@
-import { Injectable, Logger, UnauthorizedException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  Logger,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcryptjs';
@@ -54,9 +59,7 @@ export class AuthService {
       throw new UnauthorizedException('Account is disabled');
     }
 
-    const { passwordHash: _passwordHash, ...safeUser } = user;
-    void _passwordHash;
-    return this.issueTokens(safeUser);
+    return this.issueTokens(this.usersService.sanitize(user));
   }
 
   /**
@@ -147,6 +150,31 @@ export class AuthService {
     await this.usersService.updatePassword(user.id, newPassword);
     // Force re-authentication everywhere after a password change.
     await this.refreshTokens.revokeAllForUser(user.id);
+  }
+
+  /**
+   * Changes the password of the signed-in user after verifying the current
+   * one. The caller's own session stays valid — only the stored hash changes.
+   */
+  async changePassword(
+    userId: string,
+    currentPassword: string,
+    newPassword: string,
+  ): Promise<void> {
+    const user = await this.usersService.findByIdWithSecrets(userId);
+    if (!user) throw new UnauthorizedException('Invalid credentials');
+
+    const matches = await bcrypt.compare(currentPassword, user.passwordHash);
+    if (!matches) {
+      throw new UnauthorizedException('Current password is incorrect');
+    }
+    if (currentPassword === newPassword) {
+      throw new BadRequestException(
+        'The new password must differ from the current one',
+      );
+    }
+
+    await this.usersService.updatePassword(userId, newPassword);
   }
 
   /** Cryptographically random, zero-padded numeric code. */

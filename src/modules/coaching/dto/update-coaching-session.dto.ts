@@ -35,4 +35,9 @@ export class UpdateCoachingSessionDto {
   @IsEnum(CoachingStatus)
   @IsOptional()
   status?: CoachingStatus;
+
+  @ApiPropertyOptional({ description: 'Follow-up date (ISO)' })
+  @IsDateString()
+  @IsOptional()
+  followUpAt?: string;
 }

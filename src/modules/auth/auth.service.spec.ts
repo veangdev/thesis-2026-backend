@@ -19,6 +19,22 @@ describe('AuthService', () => {
     findByEmail: jest.fn(),
     findOne: jest.fn(),
     updatePassword: jest.fn(),
+    // Mirrors the real one: drops the hash, flattens the cohort membership.
+    sanitize: jest.fn(
+      (user: {
+        passwordHash?: string;
+        cohortMemberships?: Array<{ cohort: { id: string; name: string } }>;
+      }) => {
+        const { passwordHash: _hash, cohortMemberships, ...safe } = user;
+        void _hash;
+        const cohort = cohortMemberships?.[0]?.cohort ?? null;
+        return {
+          ...safe,
+          cohortId: cohort?.id ?? null,
+          cohortName: cohort?.name ?? null,
+        };
+      },
+    ),
   };
   const jwtService = {
     signAsync: jest.fn(),

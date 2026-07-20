@@ -7,6 +7,7 @@ import {
 import { Reflector } from '@nestjs/core';
 import helmet from 'helmet';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
+import { AvatarUrlInterceptor } from './common/interceptors/avatar-url.interceptor';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import { RolesGuard } from './common/guards/roles.guard';
 import { loggerMiddleware } from './common/middleware/logger.middleware';
@@ -30,6 +31,7 @@ export function setupApp(app: INestApplication): void {
 
   app.useGlobalGuards(new JwtAuthGuard(reflector), new RolesGuard(reflector));
   app.useGlobalFilters(new AllExceptionsFilter());
+  app.useGlobalInterceptors(new AvatarUrlInterceptor());
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,

@@ -61,7 +61,8 @@ export class CreateGoalDto {
   milestones?: MilestoneDto[];
 
   @ApiPropertyOptional({
-    description: 'Target student (Coordinator only; students default to self)',
+    description:
+      'Target self-assessor (Coordinator only; self-assessors default to self)',
   })
   @IsString()
   @IsOptional()

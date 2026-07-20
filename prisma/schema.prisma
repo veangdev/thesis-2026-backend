@@ -61,6 +61,8 @@ model User {
   role          Role     @default(self_assessor)
   avatarUrl     String?
   expertiseTags String[] @default([])
+  /// Days this facilitator is free to coach, as YYYY-MM-DD.
+  availability  String[] @default([])
   isActive      Boolean  @default(true)
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
@@ -73,6 +75,7 @@ model User {
   assessments             Assessment[]
   coachingSessions        CoachingSession[]     @relation("FacilitatorSessions")
   coachingParticipations  CoachingParticipant[]
+  assignedActionItems     ActionItem[]          @relation("ActionItemAssignee")
   goals                   Goal[]
   notifications           Notification[]
   achievements            Achievement[]
@@ -254,6 +257,7 @@ model CoachingSession {
   durationMinutes Int            @default(60)
   notes           String?
   status          CoachingStatus @default(scheduled)
+  followUpAt      DateTime?
   createdAt       DateTime       @default(now())
   updatedAt       DateTime       @updatedAt
 
@@ -295,12 +299,14 @@ model CoachingSessionDimension {
 model ActionItem {
   id          String    @id @default(cuid())
   sessionId   String
+  assigneeId  String?
   description String
   dueDate     DateTime?
   done        Boolean   @default(false)
   createdAt   DateTime  @default(now())
 
-  session CoachingSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  session  CoachingSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  assignee User?           @relation("ActionItemAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
 
   @@index([sessionId])
   @@map("action_items")

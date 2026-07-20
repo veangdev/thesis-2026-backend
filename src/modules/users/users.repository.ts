@@ -6,6 +6,18 @@ import { Prisma, User } from '../../../generated/prisma/client';
  * Data-access layer for the User model. The service layer talks to this
  * repository rather than to PrismaService directly.
  */
+/** Pull each user's (single) cohort membership so the API can expose it. */
+const WITH_COHORT = {
+  cohortMemberships: {
+    take: 1,
+    include: { cohort: { select: { id: true, name: true } } },
+  },
+} satisfies Prisma.UserInclude;
+
+export type UserWithCohort = Prisma.UserGetPayload<{
+  include: typeof WITH_COHORT;
+}>;
+
 @Injectable()
 export class UsersRepository {
   constructor(private readonly prisma: PrismaService) {}
@@ -18,13 +30,24 @@ export class UsersRepository {
     skip?: number;
     take?: number;
     where?: Prisma.UserWhereInput;
-  }): Promise<User[]> {
+  }): Promise<UserWithCohort[]> {
     return this.prisma.user.findMany({
       where: params?.where,
       orderBy: { createdAt: 'desc' },
       skip: params?.skip,
       take: params?.take,
+      include: WITH_COHORT,
     });
+  }
+
+  cohortExists(cohortId: string): Promise<number> {
+    return this.prisma.cohort.count({ where: { id: cohortId } });
+  }
+
+  /** Set the user's cohort, replacing any existing membership (one per user). */
+  async setCohort(userId: string, cohortId: string): Promise<void> {
+    await this.prisma.cohortMember.deleteMany({ where: { userId } });
+    await this.prisma.cohortMember.create({ data: { userId, cohortId } });
   }
 
   count(where?: Prisma.UserWhereInput): Promise<number> {
@@ -36,12 +59,11 @@ export class UsersRepository {
    * duplicate email or any other failure rolls the whole batch back.
    */
   createMany(
-    records: Prisma.UserCreateInput[],
-    cohortId?: string,
+    records: Array<{ data: Prisma.UserCreateInput; cohortId?: string }>,
   ): Promise<User[]> {
     return this.prisma.$transaction(async (tx) => {
       const created: User[] = [];
-      for (const data of records) {
+      for (const { data, cohortId } of records) {
         const user = await tx.user.create({ data });
         if (cohortId) {
           await tx.cohortMember.create({
@@ -54,12 +76,15 @@ export class UsersRepository {
     });
   }
 
-  findById(id: string): Promise<User | null> {
-    return this.prisma.user.findUnique({ where: { id } });
+  findById(id: string): Promise<UserWithCohort | null> {
+    return this.prisma.user.findUnique({ where: { id }, include: WITH_COHORT });
   }
 
-  findByEmail(email: string): Promise<User | null> {
-    return this.prisma.user.findUnique({ where: { email } });
+  findByEmail(email: string): Promise<UserWithCohort | null> {
+    return this.prisma.user.findUnique({
+      where: { email },
+      include: WITH_COHORT,
+    });
   }
 
   update(id: string, data: Prisma.UserUpdateInput): Promise<User> {
