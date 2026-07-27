@@ -30,6 +30,10 @@ export class AnalyticsController {
   @Get('student/:id')
   @ApiOperation({
     summary: 'Radar per period, trends, gaps and zones for one self-assessor',
+    description:
+      'One entry per period in the student’s cohort — including cycles still ' +
+      'in progress, which carry `average: null` — each with self, mentor and ' +
+      'agreed scores per dimension. `trend` compares the last two graded cycles.',
   })
   @ApiOkResponse({ description: 'Self-assessor growth analytics' })
   student(
@@ -44,6 +48,11 @@ export class AnalyticsController {
   @ApiOperation({
     summary:
       'Heatmap, weakest dimensions, completion rates, at-risk self-assessors',
+    description:
+      'Also returns `cohortName`, `participationRate` (share of the open ' +
+      'cycle started), `dimensionAverages` for every dimension (unscored ones ' +
+      'are `null`, never 0) and a chronological `trendline`. Heatmap rows ' +
+      'carry each student’s `trend` and `average`.',
   })
   @ApiOkResponse({ description: 'Cohort analytics' })
   cohort(@Param('id') id: string): Promise<CohortAnalytics> {
@@ -54,6 +63,11 @@ export class AnalyticsController {
   @Roles(Role.program_coordinator)
   @ApiOperation({
     summary: 'Program-wide KPIs and facilitator workload (Coordinator)',
+    description:
+      'KPIs include `activeCohorts`, `completionRate` for the open cycle and ' +
+      'a programme-wide `atRiskCount` scored against each cohort’s own scale. ' +
+      'Workload rows carry `pendingReviews`. Also returns the merged ' +
+      '`activityFeed` and a six-week `activityTrend` of submissions.',
   })
   @ApiOkResponse({ description: 'Overview analytics' })
   overview(): Promise<OverviewAnalytics> {
@@ -63,6 +77,9 @@ export class AnalyticsController {
   @Get('gap/:assessmentId')
   @ApiOperation({
     summary: 'Self vs facilitator vs agreed score per dimension',
+    description:
+      'Each dimension carries the signed `selfMentorGap` and the facilitator’s ' +
+      '`mentorNote`, so the gap view can quote the reasoning beside the numbers.',
   })
   @ApiOkResponse({ description: 'Self/facilitator gap analysis' })
   gap(

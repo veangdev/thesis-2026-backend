@@ -13,7 +13,7 @@ export class DimensionsService {
   ) {}
 
   async create(cohortId: string, dto: CreateDimensionDto): Promise<Dimension> {
-    await this.cohortsService.findOne(cohortId);
+    await this.cohortsService.findRaw(cohortId);
     return this.dimensionsRepository.create({
       cohort: { connect: { id: cohortId } },
       name: dto.name,
@@ -24,7 +24,7 @@ export class DimensionsService {
   }
 
   async findByCohort(cohortId: string): Promise<Dimension[]> {
-    await this.cohortsService.findOne(cohortId);
+    await this.cohortsService.findRaw(cohortId);
     return this.dimensionsRepository.findByCohort(cohortId);
   }
 

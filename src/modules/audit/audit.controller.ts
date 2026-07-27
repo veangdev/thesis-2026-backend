@@ -10,8 +10,9 @@ import {
 import { Roles } from '../../common/decorators/roles.decorator';
 import { Role } from '../../common/enums';
 import { AuditService } from './audit.service';
-import { Paginated, PaginationQueryDto } from '../../common/dto/pagination.dto';
-import { AuditLog } from '../../../generated/prisma/client';
+import { AuditQueryDto } from './dto/audit-query.dto';
+import { AuditLogWithActor } from './audit.repository';
+import { Paginated } from '../../common/dto/pagination.dto';
 
 @ApiTags('audit-logs')
 @ApiBearerAuth()
@@ -23,11 +24,14 @@ export class AuditController {
 
   @Get()
   @Roles(Role.program_coordinator)
-  @ApiOperation({ summary: 'List admin audit log entries (Coordinator only)' })
+  @ApiOperation({
+    summary:
+      'List admin audit log entries, filterable by actor/action/entity (Coordinator only)',
+  })
   @ApiOkResponse({ description: 'Paginated audit log' })
   findAll(
-    @Query() pagination: PaginationQueryDto,
-  ): Promise<Paginated<AuditLog>> {
-    return this.auditService.findAll(pagination);
+    @Query() query: AuditQueryDto,
+  ): Promise<Paginated<AuditLogWithActor>> {
+    return this.auditService.findAll(query);
   }
 }

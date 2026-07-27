@@ -17,12 +17,35 @@ const SAFE_USER_SELECT = {
 const ASSESSMENT_INCLUDE = {
   scores: { include: { dimension: true } },
   period: true,
-  student: { select: SAFE_USER_SELECT },
+  student: {
+    select: {
+      ...SAFE_USER_SELECT,
+      // Who owns the review. Mirrors `WITH_COHORT` in the users repository: a
+      // `take: 1` include on the active assignment, so listing N assessments
+      // stays one round trip instead of N+1.
+      selfAssessorAssignments: {
+        take: 1,
+        where: { active: true },
+        select: { facilitatorId: true },
+      },
+    },
+  },
 } satisfies Prisma.AssessmentInclude;
 
 export type AssessmentWithRelations = Prisma.AssessmentGetPayload<{
   include: typeof ASSESSMENT_INCLUDE;
 }>;
+
+/**
+ * What the API actually returns: the assignment relation flattened onto
+ * `facilitatorId` and removed from `student`, so the nested join never reaches
+ * the wire. Built by `AssessmentsService.shape`.
+ */
+export type AssessmentResponse = Omit<AssessmentWithRelations, 'student'> & {
+  student: Omit<AssessmentWithRelations['student'], 'selfAssessorAssignments'>;
+  /** `null` when the student has no active mentor assignment. */
+  facilitatorId: string | null;
+};
 
 @Injectable()
 export class AssessmentsRepository {

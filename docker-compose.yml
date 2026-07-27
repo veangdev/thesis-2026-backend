@@ -1,3 +1,9 @@
+# Pinned so the project name survives folder renames. Compose derives it from
+# the directory by default, and the rename thesis-backend → thesis-2026-backend
+# would otherwise point at a new, empty `<project>_postgres_data` volume and
+# silently strand the existing database.
+name: thesis-backend
+
 services:
   postgres:
     image: postgres:16-alpine
@@ -29,10 +35,18 @@ services:
       # Bind the app to 8000 inside the container (overrides PORT from .env)
       # so the published port and healthcheck below line up.
       PORT: '8000'
-      # Inside the compose network the app reaches Postgres on its service name.
-      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/pnc_journey_star?schema=public
+      # WORKAROUND: ufw's DEFAULT_FORWARD_POLICY="DROP" wipes Docker's FORWARD
+      # rules on reload/reboot, which kills all container-to-container traffic
+      # on the bridge. The service-name route below is the correct one and
+      # should be restored once ufw is fixed:
+      #   DATABASE_URL: postgresql://postgres:postgres@postgres:5432/pnc_journey_star?schema=public
+      # Until then, reach Postgres via its published host port, which still
+      # works because that path is DNAT rather than bridge forwarding.
+      DATABASE_URL: postgresql://postgres:postgres@host.docker.internal:5433/pnc_journey_star?schema=public
       # Seed demo users (admin/mentor/student) on first boot. Idempotent.
       SEED_ON_START: 'true'
+    extra_hosts:
+      - 'host.docker.internal:host-gateway'
     ports:
       - '8000:8000'
     depends_on:

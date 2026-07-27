@@ -7,7 +7,7 @@ export class UpdatePeriodDto extends PartialType(CreatePeriodDto) {
   @ApiPropertyOptional({
     enum: AssessmentPeriodStatus,
     description:
-      'Set to `open` to launch the cycle (generates draft assessments) or `closed` to end it',
+      'Set to `active` to launch the cycle (generates draft assessments) or `completed` to end it',
   })
   @IsEnum(AssessmentPeriodStatus)
   @IsOptional()

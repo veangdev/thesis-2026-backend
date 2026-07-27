@@ -19,19 +19,34 @@ const SAFE_USER_SELECT = {
   updatedAt: true,
 } as const;
 
+const ACTION_ITEM_INCLUDE = {
+  assignee: { select: { id: true, name: true } },
+} satisfies Prisma.ActionItemInclude;
+
 const SESSION_INCLUDE = {
   facilitator: { select: SAFE_USER_SELECT },
   participants: { include: { user: { select: SAFE_USER_SELECT } } },
   targetDimensions: { include: { dimension: true } },
-  actionItems: {
-    include: { assignee: { select: { id: true, name: true } } },
-    orderBy: { createdAt: 'asc' },
-  },
+  actionItems: { include: ACTION_ITEM_INCLUDE, orderBy: { createdAt: 'asc' } },
 } satisfies Prisma.CoachingSessionInclude;
 
 export type SessionWithRelations = Prisma.CoachingSessionGetPayload<{
   include: typeof SESSION_INCLUDE;
 }>;
+
+/** The action-item shape the API actually returns — `assignee` included. */
+export type ActionItemWithAssignee = Prisma.ActionItemGetPayload<{
+  include: typeof ACTION_ITEM_INCLUDE;
+}>;
+
+/**
+ * Join-table members of a session. Supplying either array replaces that list
+ * wholesale; omitting it leaves the existing rows untouched.
+ */
+export interface SessionRelationUpdate {
+  participantIds?: string[];
+  dimensionIds?: string[];
+}
 
 @Injectable()
 export class CoachingRepository {
@@ -41,6 +56,7 @@ export class CoachingRepository {
     facilitatorId: string;
     title: string;
     scope: Prisma.CoachingSessionCreateInput['scope'];
+    cohortId?: string;
     scheduledAt: Date;
     durationMinutes: number;
     notes?: string;
@@ -53,6 +69,7 @@ export class CoachingRepository {
         facilitatorId: params.facilitatorId,
         title: params.title,
         scope: params.scope,
+        cohortId: params.cohortId,
         scheduledAt: params.scheduledAt,
         durationMinutes: params.durationMinutes,
         notes: params.notes,
@@ -96,11 +113,54 @@ export class CoachingRepository {
   update(
     id: string,
     data: Prisma.CoachingSessionUncheckedUpdateInput,
+    relations?: SessionRelationUpdate,
   ): Promise<SessionWithRelations> {
-    return this.prisma.coachingSession.update({
-      where: { id },
-      data,
-      include: SESSION_INCLUDE,
+    if (!relations?.participantIds && !relations?.dimensionIds) {
+      return this.prisma.coachingSession.update({
+        where: { id },
+        data,
+        include: SESSION_INCLUDE,
+      });
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      const { participantIds, dimensionIds } = relations;
+
+      if (participantIds) {
+        await tx.coachingParticipant.deleteMany({ where: { sessionId: id } });
+        await tx.coachingParticipant.createMany({
+          data: participantIds.map((userId) => ({ sessionId: id, userId })),
+        });
+        // An action item may only be assigned to a current participant, which
+        // the assignee picker relies on. Drop assignments the new list removed.
+        await tx.actionItem.updateMany({
+          where: {
+            sessionId: id,
+            assigneeId: participantIds.length
+              ? { not: null, notIn: participantIds }
+              : { not: null },
+          },
+          data: { assigneeId: null },
+        });
+      }
+
+      if (dimensionIds) {
+        await tx.coachingSessionDimension.deleteMany({
+          where: { sessionId: id },
+        });
+        await tx.coachingSessionDimension.createMany({
+          data: dimensionIds.map((dimensionId) => ({
+            sessionId: id,
+            dimensionId,
+          })),
+        });
+      }
+
+      return tx.coachingSession.update({
+        where: { id },
+        data,
+        include: SESSION_INCLUDE,
+      });
     });
   }
 
@@ -110,10 +170,10 @@ export class CoachingRepository {
 
   addActionItem(
     data: Prisma.ActionItemUncheckedCreateInput,
-  ): Promise<ActionItem> {
+  ): Promise<ActionItemWithAssignee> {
     return this.prisma.actionItem.create({
       data,
-      include: { assignee: { select: { id: true, name: true } } },
+      include: ACTION_ITEM_INCLUDE,
     });
   }
 
@@ -124,16 +184,28 @@ export class CoachingRepository {
   updateActionItem(
     id: string,
     data: Prisma.ActionItemUncheckedUpdateInput,
-  ): Promise<ActionItem> {
+  ): Promise<ActionItemWithAssignee> {
     return this.prisma.actionItem.update({
       where: { id },
       data,
-      include: { assignee: { select: { id: true, name: true } } },
+      include: ACTION_ITEM_INCLUDE,
     });
   }
 
   deleteActionItem(id: string): Promise<ActionItem> {
     return this.prisma.actionItem.delete({ where: { id } });
+  }
+
+  /** The one cohort every given user belongs to, or undefined if not unanimous. */
+  async sharedCohortId(userIds: string[]): Promise<string | undefined> {
+    if (!userIds.length) return undefined;
+    const rows = await this.prisma.cohortMember.findMany({
+      where: { userId: { in: userIds } },
+      select: { cohortId: true },
+      distinct: ['cohortId'],
+      take: 2,
+    });
+    return rows.length === 1 ? rows[0].cohortId : undefined;
   }
 
   async activeStudentIdsInCohort(cohortId: string): Promise<string[]> {

@@ -6,11 +6,32 @@ import { Prisma, User } from '../../../generated/prisma/client';
  * Data-access layer for the User model. The service layer talks to this
  * repository rather than to PrismaService directly.
  */
-/** Pull each user's (single) cohort membership so the API can expose it. */
+/**
+ * Pull each user's (single) cohort membership and their active mentor
+ * assignment so the API can flatten both onto the response — the frontend
+ * `User` carries `cohortId`/`cohortName`/`facilitatorId`/`facilitatorName` as
+ * scalars, not relations.
+ *
+ * The facilitator's name is selected alongside their id so a roster can render
+ * the Facilitator column straight from the row. Without it the client has to
+ * fetch every facilitator and join client-side, which silently reads
+ * "Unassigned" for anyone past the page it fetched.
+ *
+ * Both are `take: 1` includes rather than separate queries, so listing N users
+ * stays one round trip instead of N+1.
+ */
 const WITH_COHORT = {
   cohortMemberships: {
     take: 1,
     include: { cohort: { select: { id: true, name: true } } },
+  },
+  selfAssessorAssignments: {
+    take: 1,
+    where: { active: true },
+    select: {
+      facilitatorId: true,
+      facilitator: { select: { name: true } },
+    },
   },
 } satisfies Prisma.UserInclude;
 
@@ -30,10 +51,11 @@ export class UsersRepository {
     skip?: number;
     take?: number;
     where?: Prisma.UserWhereInput;
+    orderBy?: Prisma.UserOrderByWithRelationInput[];
   }): Promise<UserWithCohort[]> {
     return this.prisma.user.findMany({
       where: params?.where,
-      orderBy: { createdAt: 'desc' },
+      orderBy: params?.orderBy ?? [{ createdAt: 'desc' }],
       skip: params?.skip,
       take: params?.take,
       include: WITH_COHORT,
@@ -84,6 +106,14 @@ export class UsersRepository {
     return this.prisma.user.findUnique({
       where: { email },
       include: WITH_COHORT,
+    });
+  }
+
+  /** Only the id is needed — this backs the uniqueness check on writes. */
+  findByStudentCode(studentCode: string): Promise<{ id: string } | null> {
+    return this.prisma.user.findUnique({
+      where: { studentCode },
+      select: { id: true },
     });
   }
 

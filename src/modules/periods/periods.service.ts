@@ -19,21 +19,33 @@ export class PeriodsService {
     private readonly assessmentsService: AssessmentsService,
   ) {}
 
+  /**
+   * Creates a period. A period created directly as `active` launches the cycle
+   * on the spot — same generation step as opening it later, so the two routes
+   * to an open cycle cannot diverge.
+   */
   async create(
     cohortId: string,
     dto: CreatePeriodDto,
   ): Promise<AssessmentPeriod> {
-    await this.cohortsService.findOne(cohortId);
-    return this.periodsRepository.create({
+    await this.cohortsService.findRaw(cohortId);
+    const created = await this.periodsRepository.create({
       cohort: { connect: { id: cohortId } },
       name: dto.name,
       startDate: new Date(dto.startDate),
       endDate: new Date(dto.endDate),
+      status: dto.status,
     });
+
+    if (created.status === AssessmentPeriodStatus.active) {
+      await this.assessmentsService.generateForPeriod(created);
+    }
+
+    return created;
   }
 
   async findByCohort(cohortId: string): Promise<AssessmentPeriod[]> {
-    await this.cohortsService.findOne(cohortId);
+    await this.cohortsService.findRaw(cohortId);
     return this.periodsRepository.findByCohort(cohortId);
   }
 
@@ -44,7 +56,7 @@ export class PeriodsService {
   }
 
   /**
-   * Updates a period. Opening it (status → `open`) generates the draft
+   * Updates a period. Opening it (status → `active`) generates the draft
    * assessments for every active student in the cohort and notifies them.
    */
   async update(id: string, dto: UpdatePeriodDto): Promise<AssessmentPeriod> {
@@ -60,8 +72,8 @@ export class PeriodsService {
     const updated = await this.periodsRepository.update(id, data);
 
     const isOpening =
-      dto.status === AssessmentPeriodStatus.open &&
-      period.status !== AssessmentPeriodStatus.open;
+      dto.status === AssessmentPeriodStatus.active &&
+      period.status !== AssessmentPeriodStatus.active;
     if (isOpening) {
       await this.assessmentsService.generateForPeriod(updated);
     }
@@ -77,7 +89,7 @@ export class PeriodsService {
     const period = await this.findOne(id);
     if (period.status !== AssessmentPeriodStatus.upcoming) {
       throw new BadRequestException(
-        'Only upcoming periods can be deleted; open or completed cycles are kept for their assessment history.',
+        'Only upcoming periods can be deleted; active or completed cycles are kept for their assessment history.',
       );
     }
     await this.periodsRepository.delete(id);

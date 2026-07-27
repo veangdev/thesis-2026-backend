@@ -5,6 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import {
+  AssessmentResponse,
   AssessmentsRepository,
   AssessmentWithRelations,
 } from './assessments.repository';
@@ -17,6 +18,7 @@ import { UpdateMentorAssessmentDto } from './dto/update-mentor-assessment.dto';
 import { AssessmentQueryDto } from './dto/assessment-query.dto';
 import { isCoachingRecommended } from './assessment-logic';
 import { AssessmentStatus, NotificationType, Role } from '../../common/enums';
+import { APP_ROUTES } from '../../common/constants/app-routes';
 import { Paginated, paginate } from '../../common/dto/pagination.dto';
 import { AuthenticatedUser } from '../../common/interfaces';
 import {
@@ -75,6 +77,7 @@ export class AssessmentsService {
       type: NotificationType.assessment_reminder,
       title: `Assessment open: ${period.name}`,
       body: `The assessment period "${period.name}" is open. Please complete your self-assessment.`,
+      href: APP_ROUTES.assessments,
     });
 
     const mentorIds = new Set<string>();
@@ -87,6 +90,7 @@ export class AssessmentsService {
       type: NotificationType.assessment_reminder,
       title: `Assessments open: ${period.name}`,
       body: `Your students have a new assessment period "${period.name}" to review.`,
+      href: APP_ROUTES.assessments,
     });
   }
 
@@ -95,7 +99,7 @@ export class AssessmentsService {
   async findAll(
     query: AssessmentQueryDto,
     user: AuthenticatedUser,
-  ): Promise<Paginated<AssessmentWithRelations>> {
+  ): Promise<Paginated<AssessmentResponse>> {
     const page = query.page ?? 1;
     const pageSize = query.pageSize ?? 20;
     const where = await this.buildScopedWhere(query, user);
@@ -110,7 +114,7 @@ export class AssessmentsService {
     ]);
 
     return paginate(
-      rows.map((r) => this.sortScores(r)),
+      rows.map((r) => this.shape(r)),
       total,
       page,
       pageSize,
@@ -120,10 +124,10 @@ export class AssessmentsService {
   async findOne(
     id: string,
     user: AuthenticatedUser,
-  ): Promise<AssessmentWithRelations> {
+  ): Promise<AssessmentResponse> {
     const assessment = await this.getOrThrow(id);
     await this.assertCanRead(assessment, user);
-    return this.sortScores(assessment);
+    return this.shape(assessment);
   }
 
   // ─────────────────────────── Self-assessment ───────────────────────────
@@ -132,7 +136,7 @@ export class AssessmentsService {
     id: string,
     dto: UpdateSelfAssessmentDto,
     user: AuthenticatedUser,
-  ): Promise<AssessmentWithRelations> {
+  ): Promise<AssessmentResponse> {
     const assessment = await this.getOrThrow(id);
     this.assertOwner(assessment, user);
     if (assessment.status !== AssessmentStatus.draft) {
@@ -167,7 +171,7 @@ export class AssessmentsService {
   async submitSelf(
     id: string,
     user: AuthenticatedUser,
-  ): Promise<AssessmentWithRelations> {
+  ): Promise<AssessmentResponse> {
     const assessment = await this.getOrThrow(id);
     this.assertOwner(assessment, user);
     if (assessment.status !== AssessmentStatus.draft) {
@@ -193,6 +197,7 @@ export class AssessmentsService {
         type: NotificationType.submission,
         title: 'Self-assessment submitted',
         body: `${assessment.student.name} submitted a self-assessment for "${assessment.period.name}".`,
+        href: APP_ROUTES.assessmentDetail(id),
       });
     }
 
@@ -205,7 +210,7 @@ export class AssessmentsService {
     id: string,
     dto: UpdateMentorAssessmentDto,
     user: AuthenticatedUser,
-  ): Promise<AssessmentWithRelations> {
+  ): Promise<AssessmentResponse> {
     const assessment = await this.getOrThrow(id);
     await this.assertMentorOf(assessment, user);
     if (
@@ -256,7 +261,7 @@ export class AssessmentsService {
   async submitMentor(
     id: string,
     user: AuthenticatedUser,
-  ): Promise<AssessmentWithRelations> {
+  ): Promise<AssessmentResponse> {
     const assessment = await this.getOrThrow(id);
     await this.assertMentorOf(assessment, user);
     if (
@@ -305,6 +310,7 @@ export class AssessmentsService {
         type: NotificationType.coaching_reminder,
         title: `Coaching recommended for ${assessment.student.name}`,
         body: `Dimensions needing attention: ${flagged.join(', ')}.`,
+        href: APP_ROUTES.coaching,
       });
     }
 
@@ -319,6 +325,15 @@ export class AssessmentsService {
     return assessment;
   }
 
+  /**
+   * Role scope first, caller filters second.
+   *
+   * `cohortId` and `facilitatorId` are expressed as relation constraints rather
+   * than by assigning `where.studentId`, so they compose with — and can never
+   * overwrite — the role scoping applied below. A facilitator passing another
+   * facilitator's id therefore intersects to an empty set instead of escaping
+   * their own roster.
+   */
   private async buildScopedWhere(
     query: AssessmentQueryDto,
     user: AuthenticatedUser,
@@ -326,6 +341,14 @@ export class AssessmentsService {
     const where: Prisma.AssessmentWhereInput = {};
     if (query.periodId) where.periodId = query.periodId;
     if (query.status) where.status = query.status;
+    if (query.cohortId) where.period = { cohortId: query.cohortId };
+    if (query.facilitatorId) {
+      where.student = {
+        selfAssessorAssignments: {
+          some: { facilitatorId: query.facilitatorId, active: true },
+        },
+      };
+    }
 
     if (user.role === Role.self_assessor) {
       where.studentId = user.id;
@@ -396,7 +419,7 @@ export class AssessmentsService {
   }
 
   private async scaleMaxFor(cohortId: string): Promise<number> {
-    const cohort = await this.cohortsService.findOne(cohortId);
+    const cohort = await this.cohortsService.findRaw(cohortId);
     return cohort.scoringScaleMax;
   }
 
@@ -412,10 +435,21 @@ export class AssessmentsService {
     }
   }
 
-  private sortScores(
-    assessment: AssessmentWithRelations,
-  ): AssessmentWithRelations {
-    assessment.scores.sort((a, b) => a.dimension.order - b.dimension.order);
-    return assessment;
+  /**
+   * The response shape: scores in dimension order, and the student's active
+   * mentor assignment flattened onto `facilitatorId`. The nested relation is
+   * dropped rather than passed through — `facilitatorId` is the contract, and
+   * leaving the join array on `student` would expose a second, differently
+   * shaped way to read the same fact.
+   */
+  private shape(assessment: AssessmentWithRelations): AssessmentResponse {
+    const { student, ...rest } = assessment;
+    const { selfAssessorAssignments, ...safeStudent } = student;
+    rest.scores.sort((a, b) => a.dimension.order - b.dimension.order);
+    return {
+      ...rest,
+      student: safeStudent,
+      facilitatorId: selfAssessorAssignments[0]?.facilitatorId ?? null,
+    };
   }
 }

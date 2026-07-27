@@ -32,23 +32,56 @@ const TRAJECTORY_CYCLE: Trajectory[] = ['improving', 'stagnant', 'regressing'];
 const COHORTS = [
   {
     name: 'Batch 2025 — Software Engineering',
+    description: 'Full-stack track. Two-year programme on a 5-point scale.',
     scoringScaleMax: 5,
     completedPeriods: 3,
   },
   {
     name: 'Batch 2026 — Data Science',
+    description: 'Analytics and ML track, assessed on a 10-point scale.',
     scoringScaleMax: 10,
     completedPeriods: 2,
   },
   {
     name: 'Batch 2026 — Product Design',
+    description: 'UX and product track. Two-year programme on a 5-point scale.',
     scoringScaleMax: 5,
     completedPeriods: 2,
   },
 ];
 
+/** Ten students per cohort, in `COHORTS` order — see the slice below. */
+const STUDENTS_PER_COHORT = 10;
+
+/** Classes a cohort is subdivided into, cycled over its students. */
+const CLASS_CYCLE = ['A', 'B', 'C'] as const;
+
 const clamp = (value: number, min: number, max: number): number =>
   Math.max(min, Math.min(max, value));
+
+/** "Batch 2025 — Software Engineering" → "2025". */
+function batchYearOf(cohortName: string): string {
+  return cohortName.match(/\b(20\d{2})\b/)?.[1] ?? '2025';
+}
+
+/**
+ * Roster attributes for the nth seeded student. `studentCode` is keyed off the
+ * global index rather than a per-cohort counter because two seeded cohorts share
+ * an intake year, and the column is unique across all users.
+ */
+function rosterFor(index: number): {
+  gender: 'male' | 'female';
+  studentClass: (typeof CLASS_CYCLE)[number];
+  studentCode: string;
+} {
+  const cohortName =
+    COHORTS[Math.floor(index / STUDENTS_PER_COHORT)]?.name ?? COHORTS[0].name;
+  return {
+    gender: index % 2 === 0 ? 'female' : 'male',
+    studentClass: CLASS_CYCLE[index % CLASS_CYCLE.length],
+    studentCode: `${batchYearOf(cohortName)}-ID-${String(index + 1).padStart(2, '0')}`,
+  };
+}
 
 function scoreFor(
   trajectory: Trajectory,
@@ -94,6 +127,7 @@ async function main(): Promise<void> {
           email,
           passwordHash,
           role: 'facilitator',
+          gender: i % 2 === 0 ? 'male' : 'female',
           expertiseTags: [
             DIMENSION_NAMES[i % DIMENSION_NAMES.length],
             'coaching',
@@ -104,7 +138,7 @@ async function main(): Promise<void> {
   }
 
   const students = [];
-  for (let i = 0; i < 30; i++) {
+  for (let i = 0; i < COHORTS.length * STUDENTS_PER_COHORT; i++) {
     const email = i === 0 ? 'student@pnc.edu' : `student${i + 1}@pnc.edu`;
     students.push(
       await prisma.user.create({
@@ -113,6 +147,7 @@ async function main(): Promise<void> {
           email,
           passwordHash,
           role: 'self_assessor',
+          ...rosterFor(i),
         },
       }),
     );
@@ -127,6 +162,7 @@ async function main(): Promise<void> {
     const cohort = await prisma.cohort.create({
       data: {
         name: config.name,
+        description: config.description,
         startDate: new Date('2025-01-15T00:00:00.000Z'),
         expectedEndDate: new Date('2027-01-15T00:00:00.000Z'),
         scoringScaleMax: config.scoringScaleMax,
@@ -148,7 +184,10 @@ async function main(): Promise<void> {
     }
 
     // 10 students and 2 facilitators per cohort.
-    const cohortStudents = students.slice(c * 10, c * 10 + 10);
+    const cohortStudents = students.slice(
+      c * STUDENTS_PER_COHORT,
+      c * STUDENTS_PER_COHORT + STUDENTS_PER_COHORT,
+    );
     const cohortFacilitators = facilitators.slice(c * 2, c * 2 + 2);
 
     for (const student of cohortStudents) {
@@ -179,7 +218,7 @@ async function main(): Promise<void> {
             name: `Cycle ${p + 1}`,
             startDate: new Date(`2025-0${p + 2}-01T00:00:00.000Z`),
             endDate: new Date(`2025-0${p + 2}-28T00:00:00.000Z`),
-            status: 'closed',
+            status: 'completed',
           },
         }),
       );
@@ -191,7 +230,7 @@ async function main(): Promise<void> {
         name: `Cycle ${config.completedPeriods + 1} — Current`,
         startDate: new Date('2026-06-01T00:00:00.000Z'),
         endDate: new Date('2026-06-30T00:00:00.000Z'),
-        status: 'open',
+        status: 'active',
       },
     });
 
@@ -263,12 +302,17 @@ async function main(): Promise<void> {
     orderBy: { order: 'asc' },
     take: 2,
   });
+  const cohort0 = await prisma.cohort.findFirstOrThrow({
+    where: { name: COHORTS[0].name },
+    select: { id: true },
+  });
 
   const individualSession = await prisma.coachingSession.create({
     data: {
       title: '1:1 Communication coaching',
       scope: 'individual',
       facilitatorId: demoFacilitator.id,
+      cohortId: cohort0.id,
       scheduledAt: new Date('2026-06-15T09:00:00.000Z'),
       durationMinutes: 45,
       notes: 'Focus on presentation structure',
@@ -291,6 +335,7 @@ async function main(): Promise<void> {
       title: 'Group workshop — Teamwork',
       scope: 'group',
       facilitatorId: demoFacilitator.id,
+      cohortId: cohort0.id,
       scheduledAt: new Date('2026-06-20T13:00:00.000Z'),
       durationMinutes: 90,
       participants: { create: groupParticipants },
@@ -311,10 +356,21 @@ async function main(): Promise<void> {
       targetDimensionId: cohort0Dimensions[0].id,
       dueDate: new Date('2026-09-01T00:00:00.000Z'),
       progressPercent: 35,
+      targetScore: 4,
       milestones: [
         { title: 'Join debate club', done: true },
         { title: 'Give 3 short talks', done: false },
       ],
+    },
+  });
+  // One achieved goal so the Goals panel has data in both sections.
+  await prisma.goal.create({
+    data: {
+      studentId: demoStudent.id,
+      title: 'Keep a weekly learning journal',
+      targetDimensionId: cohort0Dimensions[1].id,
+      progressPercent: 100,
+      status: 'achieved',
     },
   });
   for (let i = 1; i <= 4; i++) {
@@ -335,19 +391,29 @@ async function main(): Promise<void> {
         type: 'assessment_reminder',
         title: 'New assessment period open',
         body: 'Complete your self-assessment for the current cycle.',
+        href: '/assessments',
       },
       {
         userId: demoStudent.id,
         type: 'coaching_reminder',
         title: 'Coaching session scheduled',
         body: 'You have a 1:1 communication coaching session.',
+        href: '/coaching',
         readAt: new Date(),
+      },
+      {
+        userId: demoStudent.id,
+        type: 'goal',
+        title: 'New goal set for you',
+        body: '"Speak up in weekly stand-ups" was added to your goals.',
+        href: '/goals',
       },
       {
         userId: demoFacilitator.id,
         type: 'submission',
         title: 'Self-assessment submitted',
         body: 'Student 01 submitted a self-assessment for your review.',
+        href: '/assessments',
       },
       {
         userId: coordinator.id,

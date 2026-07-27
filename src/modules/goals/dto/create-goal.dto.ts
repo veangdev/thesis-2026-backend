@@ -4,6 +4,7 @@ import {
   IsArray,
   IsBoolean,
   IsDateString,
+  IsEnum,
   IsInt,
   IsNotEmpty,
   IsOptional,
@@ -12,6 +13,7 @@ import {
   Min,
   ValidateNested,
 } from 'class-validator';
+import { GoalStatus } from '../../../common/enums';
 
 export class MilestoneDto {
   @ApiProperty({ example: 'Draft first presentation' })
@@ -52,6 +54,26 @@ export class CreateGoalDto {
   @Max(100)
   @IsOptional()
   progressPercent?: number;
+
+  @ApiPropertyOptional({
+    description:
+      'Score on the cohort scale being aimed for on the target dimension',
+    minimum: 0,
+  })
+  @IsInt()
+  @Min(0)
+  @IsOptional()
+  targetScore?: number;
+
+  @ApiPropertyOptional({
+    enum: GoalStatus,
+    default: GoalStatus.active,
+    description:
+      'Set explicitly — `achieved` is not derived from `progressPercent`',
+  })
+  @IsEnum(GoalStatus)
+  @IsOptional()
+  status?: GoalStatus;
 
   @ApiPropertyOptional({ type: [MilestoneDto] })
   @IsArray()

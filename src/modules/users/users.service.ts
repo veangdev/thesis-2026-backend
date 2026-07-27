@@ -50,6 +50,24 @@ function normaliseAvailability(days: string[]): string[] {
   return [...new Set(days)].filter((day) => day >= today).sort();
 }
 
+/**
+ * First student ID repeated within one import batch, or `undefined` if all are
+ * distinct. Caught before the transaction so a spreadsheet with a copy-paste
+ * error fails with a readable message rather than a unique-constraint error
+ * halfway through.
+ */
+function findDuplicateStudentCode(
+  users: Array<{ studentCode?: string }>,
+): string | undefined {
+  const seen = new Set<string>();
+  for (const { studentCode } of users) {
+    if (!studentCode) continue;
+    if (seen.has(studentCode)) return studentCode;
+    seen.add(studentCode);
+  }
+  return undefined;
+}
+
 @Injectable()
 export class UsersService {
   constructor(private readonly usersRepository: UsersRepository) {}
@@ -59,8 +77,11 @@ export class UsersService {
     if (existing) throw new ConflictException('Email already in use');
 
     const { password, cohortId, ...rest } = dto;
-    // Validate the cohort before creating so a bad id can't orphan a new user.
+    // Validate the cohort and the student ID before creating, so a bad id
+    // can't orphan a new user and a duplicate code surfaces as a 409 rather
+    // than a Prisma unique-constraint 500.
     if (cohortId) await this.assertCohortExists(cohortId);
+    if (rest.studentCode) await this.assertStudentCodeFree(rest.studentCode);
     const passwordHash = await bcrypt.hash(password, SALT_ROUNDS);
     const user = await this.usersRepository.create({ ...rest, passwordHash });
     if (cohortId) await this.usersRepository.setCohort(user.id, cohortId);
@@ -76,6 +97,7 @@ export class UsersService {
         skip: (page - 1) * pageSize,
         take: pageSize,
         where,
+        orderBy: this.buildOrderBy(query.sortBy),
       }),
       this.usersRepository.count(where),
     ]);
@@ -91,8 +113,19 @@ export class UsersService {
    * Bulk-create users — atomic. `cohortId` is a relation (not a User column),
    * so it's pulled out of each record and each user is enrolled into their own
    * cohort (falling back to the batch-level `cohortId` when a row omits one).
+   *
+   * The created rows are re-read through `findAll` rather than sanitized
+   * straight from the transaction: the raw `User` rows carry no relations, so
+   * shaping them directly would report `cohortId: null` for users this call
+   * just enrolled.
    */
   async createMany(dto: BulkCreateUsersDto): Promise<AuthenticatedUser[]> {
+    const duplicate = findDuplicateStudentCode(dto.users);
+    if (duplicate) {
+      throw new ConflictException(
+        `Student ID ${duplicate} appears more than once in this batch`,
+      );
+    }
     const records = await Promise.all(
       dto.users.map(async ({ password, cohortId, ...rest }) => ({
         data: {
@@ -103,22 +136,56 @@ export class UsersService {
       })),
     );
     const created = await this.usersRepository.createMany(records);
-    return created.map((user) => this.sanitize(user));
+    const hydrated = await this.usersRepository.findAll({
+      where: { id: { in: created.map((user) => user.id) } },
+    });
+    return hydrated.map((user) => this.sanitize(user));
   }
 
   private buildWhere(query: UserQueryDto): Prisma.UserWhereInput {
     const where: Prisma.UserWhereInput = {};
     if (query.role) where.role = query.role;
+    if (query.gender) where.gender = query.gender;
+    if (query.studentClass) where.studentClass = query.studentClass;
+    if (query.isActive !== undefined) where.isActive = query.isActive;
     if (query.cohortId) {
       where.cohortMemberships = { some: { cohortId: query.cohortId } };
+    }
+    // Scoped to the *active* assignment so a reassigned student stops appearing
+    // on their former facilitator's roster.
+    if (query.facilitatorId) {
+      where.selfAssessorAssignments = {
+        some: { facilitatorId: query.facilitatorId, active: true },
+      };
     }
     if (query.search) {
       where.OR = [
         { name: { contains: query.search, mode: 'insensitive' } },
         { email: { contains: query.search, mode: 'insensitive' } },
+        { studentCode: { contains: query.search, mode: 'insensitive' } },
       ];
     }
     return where;
+  }
+
+  /**
+   * Sort order for the roster screens. Each key falls back to `name` so rows
+   * with the same gender or class keep a stable, readable order instead of
+   * whatever Postgres returns; unsorted requests stay newest-first.
+   */
+  private buildOrderBy(
+    sortBy: UserQueryDto['sortBy'],
+  ): Prisma.UserOrderByWithRelationInput[] {
+    switch (sortBy) {
+      case 'name':
+        return [{ name: 'asc' }];
+      case 'gender':
+        return [{ gender: 'asc' }, { name: 'asc' }];
+      case 'class':
+        return [{ studentClass: 'asc' }, { name: 'asc' }];
+      default:
+        return [{ createdAt: 'desc' }];
+    }
   }
 
   async findOne(id: string): Promise<AuthenticatedUser> {
@@ -144,6 +211,8 @@ export class UsersService {
     await this.findOne(id);
     const { cohortId, ...rest } = dto;
     if (cohortId) await this.assertCohortExists(cohortId);
+    if (rest.studentCode)
+      await this.assertStudentCodeFree(rest.studentCode, id);
     await this.usersRepository.update(id, rest);
     if (cohortId) await this.usersRepository.setCohort(id, cohortId);
     return this.findOne(id);
@@ -188,6 +257,21 @@ export class UsersService {
     if (!exists) throw new NotFoundException(`Cohort ${cohortId} not found`);
   }
 
+  /**
+   * `studentCode` is unique, so a clash would otherwise surface as an opaque
+   * Prisma error. `exceptUserId` lets an update re-send the user's own code
+   * without tripping on itself.
+   */
+  private async assertStudentCodeFree(
+    studentCode: string,
+    exceptUserId?: string,
+  ): Promise<void> {
+    const owner = await this.usersRepository.findByStudentCode(studentCode);
+    if (owner && owner.id !== exceptUserId) {
+      throw new ConflictException(`Student ID ${studentCode} already in use`);
+    }
+  }
+
   async remove(id: string): Promise<void> {
     await this.findOne(id);
     await this.usersRepository.delete(id);
@@ -201,20 +285,38 @@ export class UsersService {
 
   /**
    * Strips the password hash so it can never leak through a response, and
-   * flattens the user's cohort membership onto `cohortId`/`cohortName`.
+   * flattens the user's cohort membership onto `cohortId`/`cohortName` and
+   * their active mentor assignment onto `facilitatorId`/`facilitatorName`.
+   *
+   * `passwordHash` is optional so this also accepts rows already narrowed by a
+   * Prisma `select` that excluded it — every module shapes users through here,
+   * which is what keeps the flattened relations present on all user responses.
    */
   sanitize(
-    user: User & {
+    user: Omit<User, 'passwordHash'> & {
+      passwordHash?: string;
       cohortMemberships?: Array<{ cohort: { id: string; name: string } }>;
+      selfAssessorAssignments?: Array<{
+        facilitatorId: string;
+        facilitator?: { name: string };
+      }>;
     },
   ): AuthenticatedUser {
-    const { passwordHash: _passwordHash, cohortMemberships, ...safe } = user;
+    const {
+      passwordHash: _passwordHash,
+      cohortMemberships,
+      selfAssessorAssignments,
+      ...safe
+    } = user;
     void _passwordHash;
     const cohort = cohortMemberships?.[0]?.cohort ?? null;
+    const assignment = selfAssessorAssignments?.[0] ?? null;
     return {
       ...safe,
       cohortId: cohort?.id ?? null,
       cohortName: cohort?.name ?? null,
+      facilitatorId: assignment?.facilitatorId ?? null,
+      facilitatorName: assignment?.facilitator?.name ?? null,
     };
   }
 }
