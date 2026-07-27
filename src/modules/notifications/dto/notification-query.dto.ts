@@ -1,6 +1,6 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { Transform } from 'class-transformer';
-import { IsBoolean, IsEnum, IsOptional } from 'class-validator';
+import { IsEnum, IsOptional } from 'class-validator';
+import { BooleanQuery } from '../../../common/decorators/boolean-query.decorator';
 import { NotificationType } from '../../../common/enums';
 import { NotificationCategory } from '../notification-category';
 import { PaginationQueryDto } from '../../../common/dto/pagination.dto';
@@ -30,12 +30,8 @@ export class NotificationQueryDto extends PaginationQueryDto {
   @IsOptional()
   type?: NotificationType;
 
-  @ApiPropertyOptional({
-    description:
-      'Read state. Omit for both. The frontend models this as a boolean; the column stores `readAt`, so `false` means `readAt IS NULL`.',
-  })
-  @Transform(({ value }) => value === true || value === 'true')
-  @IsBoolean()
-  @IsOptional()
+  @BooleanQuery(
+    'Read state. Omit for both. The frontend models this as a boolean; the column stores `readAt`, so `false` means `readAt IS NULL`.',
+  )
   read?: boolean;
 }
