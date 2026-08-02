@@ -11,7 +11,7 @@ export class CohortResponseDto {
   @ApiProperty({ example: 'clx0a1b2c3d4e5f6g7h8i9j0' })
   id: string;
 
-  @ApiProperty({ example: 'Batch 2026 — Software Engineering' })
+  @ApiProperty({ example: 'Batch 2026' })
   name: string;
 
   @ApiProperty({

@@ -209,6 +209,9 @@ describe('GoalsService', () => {
           userId: 'f1',
           type: NotificationType.goal,
           body: expect.stringContaining('Student 01'),
+          // Not `/goals` — that route is self-assessor-only, so the mentor has
+          // to be deep-linked to the student's panel instead.
+          href: '/students?studentId=s1&panel=goals',
         }),
       );
     });

@@ -18,8 +18,10 @@ import {
   ApiTags,
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
+import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { Role } from '../../common/enums';
+import { AuthenticatedUser } from '../../common/interfaces';
 import { CohortsService } from './cohorts.service';
 import { CreateCohortDto } from './dto/create-cohort.dto';
 import { UpdateCohortDto } from './dto/update-cohort.dto';
@@ -61,11 +63,19 @@ export class CohortsController {
   }
 
   @Get(':id')
-  @Roles(Role.program_coordinator, Role.facilitator)
-  @ApiOperation({ summary: 'Get a single cohort by id' })
+  @Roles(Role.program_coordinator, Role.facilitator, Role.self_assessor)
+  @ApiOperation({
+    summary: 'Get a single cohort by id',
+    description:
+      'Staff may read any cohort. A self-assessor may read only the cohort they ' +
+      'are enrolled in — they need its scoring scale to sit an assessment at all.',
+  })
   @ApiOkResponse({ description: 'The cohort', type: CohortResponseDto })
-  findOne(@Param('id') id: string): Promise<CohortResponseDto> {
-    return this.cohortsService.findOne(id);
+  findOne(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<CohortResponseDto> {
+    return this.cohortsService.findOne(id, user);
   }
 
   @Patch(':id')

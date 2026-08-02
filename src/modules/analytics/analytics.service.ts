@@ -38,6 +38,9 @@ import type {
 const ACTIVITY_WEEKS = 6;
 const ACTIVITY_FEED_SIZE = 8;
 
+/** Scale quoted publicly when no active cohort exists to read one from. */
+const DEFAULT_SCALE_MAX = 5;
+
 /** A `groupBy(periodId, status)` row from the assessments table. */
 interface PeriodStatusCount {
   periodId: string;
@@ -217,6 +220,29 @@ export interface ActivityFeedEntry {
   category: 'assessment' | 'coaching' | 'goal' | 'user';
 }
 
+/**
+ * Aggregate programme facts for the public landing page — the only analytics
+ * readable without a token.
+ *
+ * Deliberately counts and names only: no person, cohort roster, or score is
+ * exposed, because this is served unauthenticated. Everything here was
+ * previously hard-coded in the marketing components, where "8 dimensions"
+ * contradicted the fact that dimensions are configured per cohort.
+ */
+export interface PublicProgrammeSummary {
+  /** Active self-assessors currently on the programme. */
+  selfAssessorCount: number;
+  activeCohortCount: number;
+  completedAssessmentCount: number;
+  /** Roles the product supports — derived from the enum, not a literal. */
+  roleCount: number;
+  /** Scoring scale bounds across active cohorts (`1..scaleMax`). */
+  scaleMin: number;
+  scaleMax: number;
+  /** Dimensions of the current cohort, in display order. */
+  dimensions: { name: string; description: string | null }[];
+}
+
 export interface OverviewAnalytics {
   kpis: {
     totalUsers: number;
@@ -377,6 +403,50 @@ export class AnalyticsService {
       trendline: this.trendline(completed, periods),
       heatmap: this.heatmap(completed, dimensions),
       atRiskStudents: this.atRiskStudents(completed, scaleMax),
+    };
+  }
+
+  // ─────────────────────────── Public summary ───────────────────────────
+
+  /**
+   * §Landing — aggregate programme facts, served without authentication.
+   *
+   * The dimension list comes from the current active cohort rather than a
+   * constant, because dimensions are configured per cohort: any fixed list in the
+   * UI is wrong for every cohort that does not happen to match it.
+   */
+  async publicSummary(): Promise<PublicProgrammeSummary> {
+    const [
+      selfAssessorCount,
+      activeCohortCount,
+      completedAssessmentCount,
+      scale,
+      cohort,
+    ] = await Promise.all([
+      this.analyticsRepository.countActiveByRole(Role.self_assessor),
+      this.analyticsRepository.activeCohorts(),
+      this.analyticsRepository.countCompletedAssessments(),
+      this.analyticsRepository.activeScaleRange(),
+      this.analyticsRepository.currentCohort(),
+    ]);
+
+    // With no active cohort there is no scale to quote; fall back to the
+    // product's supported bounds rather than rendering "1–null".
+    const scaleMin = scale._min.scoringScaleMax ?? DEFAULT_SCALE_MAX;
+    const scaleMax = scale._max.scoringScaleMax ?? DEFAULT_SCALE_MAX;
+
+    const dimensions = cohort
+      ? await this.analyticsRepository.describedDimensionsForCohort(cohort.id)
+      : [];
+
+    return {
+      selfAssessorCount,
+      activeCohortCount,
+      completedAssessmentCount,
+      roleCount: Object.keys(Role).length,
+      scaleMin,
+      scaleMax,
+      dimensions,
     };
   }
 

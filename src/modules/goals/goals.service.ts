@@ -157,7 +157,9 @@ export class GoalsService {
       type: NotificationType.goal,
       title: 'Goal achieved',
       body: `${student.name} marked "${goal.title}" as achieved.`,
-      href: APP_ROUTES.goals,
+      // The facilitator has no `/goals` of their own — land them on the
+      // student's panel, goals tab, where the closed goal actually is.
+      href: APP_ROUTES.studentDetail(goal.studentId, 'goals'),
     });
   }
 

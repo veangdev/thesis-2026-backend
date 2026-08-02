@@ -11,6 +11,7 @@ export {
   CohortStatus,
   CoachingScope,
   CoachingStatus,
+  CoachingTag,
   Gender,
   GoalStatus,
   NotificationType,

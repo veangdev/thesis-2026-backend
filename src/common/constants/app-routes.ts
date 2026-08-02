@@ -12,4 +12,11 @@ export const APP_ROUTES = {
   coaching: '/coaching',
   goals: '/goals',
   journeyStar: '/journey-star',
+  /**
+   * One self-assessor's detail panel, already open on `panel`. Staff have no
+   * `/goals` or `/journey-star` of their own, so notifications aimed at a
+   * facilitator have to deep-link here rather than at the student-only routes.
+   */
+  studentDetail: (id: string, panel?: 'journey' | 'goals'): string =>
+    `/students?studentId=${id}${panel ? `&panel=${panel}` : ''}`,
 } as const;

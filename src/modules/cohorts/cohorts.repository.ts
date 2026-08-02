@@ -59,6 +59,15 @@ export class CohortsRepository {
     });
   }
 
+  /** Whether a user is enrolled in a cohort — the self-assessor read scope. */
+  async isMember(cohortId: string, userId: string): Promise<boolean> {
+    const membership = await this.prisma.cohortMember.findUnique({
+      where: { userId_cohortId: { userId, cohortId } },
+      select: { id: true },
+    });
+    return membership !== null;
+  }
+
   /** Raw row without the count — for callers that only need scalar fields. */
   findRawById(id: string): Promise<Cohort | null> {
     return this.prisma.cohort.findUnique({ where: { id } });

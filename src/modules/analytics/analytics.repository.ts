@@ -175,6 +175,62 @@ export class AnalyticsRepository {
     });
   }
 
+  /**
+   * The cohort the public landing page describes: the most recently started
+   * active one *with students on it*. Its dimensions and scale are what a
+   * visitor would actually be assessed on, so the marketing copy quotes it
+   * rather than a hard-coded list.
+   *
+   * Ordered by roster size, not by date. A date sort is trivially captured by
+   * test or placeholder rows — a one-person cohort dated next January outranks
+   * the real programme — and the public page would then advertise that row's
+   * single dimension as the whole framework. The biggest active roster is the
+   * programme a visitor would actually be joining; `startDate` only breaks ties.
+   */
+  currentCohort(): Promise<{
+    id: string;
+    name: string;
+    scoringScaleMax: number;
+  } | null> {
+    return this.prisma.cohort.findFirst({
+      where: { status: 'active', members: { some: {} } },
+      orderBy: [{ members: { _count: 'desc' } }, { startDate: 'desc' }],
+      select: { id: true, name: true, scoringScaleMax: true },
+    });
+  }
+
+  /** Active-cohort scale range, for the "1–N scoring scale" claim. */
+  activeScaleRange(): Promise<{
+    _min: { scoringScaleMax: number | null };
+    _max: { scoringScaleMax: number | null };
+  }> {
+    return this.prisma.cohort.aggregate({
+      where: { status: 'active' },
+      _min: { scoringScaleMax: true },
+      _max: { scoringScaleMax: true },
+    });
+  }
+
+  countCompletedAssessments(): Promise<number> {
+    return this.prisma.assessment.count({ where: { status: 'completed' } });
+  }
+
+  /** Active self-assessors, counted for the public programme summary. */
+  countActiveByRole(role: Role): Promise<number> {
+    return this.prisma.user.count({ where: { role, isActive: true } });
+  }
+
+  /** Dimensions with their descriptions — the landing page renders both. */
+  describedDimensionsForCohort(
+    cohortId: string,
+  ): Promise<Array<{ name: string; description: string | null }>> {
+    return this.prisma.dimension.findMany({
+      where: { cohortId, isActive: true },
+      select: { name: true, description: true },
+      orderBy: { order: 'asc' },
+    });
+  }
+
   totalCohorts(): Promise<number> {
     return this.prisma.cohort.count();
   }

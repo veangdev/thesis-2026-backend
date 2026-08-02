@@ -7,6 +7,7 @@ import {
   ApiTags,
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
+import { Public } from '../../common/decorators/public.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Role } from '../../common/enums';
@@ -16,6 +17,7 @@ import {
   CohortAnalytics,
   GapAnalytics,
   OverviewAnalytics,
+  PublicProgrammeSummary,
   StudentAnalytics,
 } from './analytics.service';
 
@@ -26,6 +28,21 @@ import {
 @Controller('analytics')
 export class AnalyticsController {
   constructor(private readonly analyticsService: AnalyticsService) {}
+
+  @Public()
+  @Get('public-summary')
+  @ApiOperation({
+    summary: 'Aggregate programme facts for the public landing page',
+    description:
+      'The only analytics route readable without a token. Returns counts, the ' +
+      'active scoring-scale bounds, and the current cohort’s dimension names — ' +
+      'no person, roster, or score. Exists so the marketing page stops quoting ' +
+      'hard-coded figures that contradict per-cohort configuration.',
+  })
+  @ApiOkResponse({ description: 'Public programme summary' })
+  publicSummary(): Promise<PublicProgrammeSummary> {
+    return this.analyticsService.publicSummary();
+  }
 
   @Get('student/:id')
   @ApiOperation({

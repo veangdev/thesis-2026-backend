@@ -36,4 +36,12 @@ export class UpdateSelfAssessmentDto {
   @ValidateNested({ each: true })
   @Type(() => SelfScoreItemDto)
   scores: SelfScoreItemDto[];
+
+  @ApiPropertyOptional({
+    description:
+      'The student’s summary of the whole cycle, saved with the draft and shown to the facilitator during review.',
+  })
+  @IsString()
+  @IsOptional()
+  overallReflection?: string;
 }

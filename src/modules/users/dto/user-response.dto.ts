@@ -63,7 +63,7 @@ export class UserResponseDto {
   cohortId: string | null;
 
   @ApiProperty({
-    example: 'Batch 2025 — Software Engineering',
+    example: 'Batch 2025',
     nullable: true,
     description: 'Name of the cohort in `cohortId`',
   })
