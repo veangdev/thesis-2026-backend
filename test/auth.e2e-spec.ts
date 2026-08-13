@@ -105,6 +105,70 @@ describe('Auth & RBAC (e2e)', () => {
     expect(res.body).not.toHaveProperty('passwordHash');
   });
 
+  // The frontend maps this payload into its own `User` shape, so the presence
+  // (not just the value) of these keys is part of the contract.
+  it('/auth/me always carries the cohort fields, even when unenrolled', async () => {
+    const res = await request(httpServer)
+      .get(`${PREFIX}/auth/me`)
+      .set('Authorization', `Bearer ${accessToken}`)
+      .expect(200);
+    expect(res.body).toHaveProperty('cohortId', null);
+    expect(res.body).toHaveProperty('cohortName', null);
+    // Names the frontend adapter reads; renaming either is a breaking change.
+    expect(res.body).toHaveProperty('avatarUrl');
+    expect(res.body).toHaveProperty('isActive', true);
+  });
+
+  describe('change-password', () => {
+    const nextPassword = 'password456';
+
+    // Pins the HTTP verb: the frontend sent POST against this PATCH route and
+    // silently 404'd, so the method itself is worth asserting.
+    it('is exposed as PATCH, not POST', async () => {
+      await request(httpServer)
+        .post(`${PREFIX}/auth/change-password`)
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ currentPassword: user.password, newPassword: nextPassword })
+        .expect(404);
+    });
+
+    it('rejects a wrong current password (401)', async () => {
+      await request(httpServer)
+        .patch(`${PREFIX}/auth/change-password`)
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ currentPassword: 'not-my-password', newPassword: nextPassword })
+        .expect(401);
+    });
+
+    it('rejects reusing the current password (400)', async () => {
+      await request(httpServer)
+        .patch(`${PREFIX}/auth/change-password`)
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ currentPassword: user.password, newPassword: user.password })
+        .expect(400);
+    });
+
+    it('changes the password and lets the new one log in', async () => {
+      await request(httpServer)
+        .patch(`${PREFIX}/auth/change-password`)
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ currentPassword: user.password, newPassword: nextPassword })
+        .expect(204);
+
+      await request(httpServer)
+        .post(`${PREFIX}/auth/login`)
+        .send({ email: user.email, password: nextPassword })
+        .expect(200);
+
+      // Restore, so the later logout/refresh cases keep using `user.password`.
+      await request(httpServer)
+        .patch(`${PREFIX}/auth/change-password`)
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ currentPassword: nextPassword, newPassword: user.password })
+        .expect(204);
+    });
+  });
+
   it('exchanges a refresh token for a new access token (non-rotating)', async () => {
     const refreshed = await request(httpServer)
       .post(`${PREFIX}/auth/refresh`)

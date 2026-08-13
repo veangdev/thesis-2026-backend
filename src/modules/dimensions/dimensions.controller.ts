@@ -19,8 +19,10 @@ import {
   ApiTags,
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
+import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { Role } from '../../common/enums';
+import { AuthenticatedUser } from '../../common/interfaces';
 import { DimensionsService } from './dimensions.service';
 import { CreateDimensionDto } from './dto/create-dimension.dto';
 import { UpdateDimensionDto } from './dto/update-dimension.dto';
@@ -49,11 +51,19 @@ export class DimensionsController {
   }
 
   @Get('cohorts/:cohortId/dimensions')
-  @Roles(Role.program_coordinator, Role.facilitator)
-  @ApiOperation({ summary: "List a cohort's dimensions" })
+  @Roles(Role.program_coordinator, Role.facilitator, Role.self_assessor)
+  @ApiOperation({
+    summary: "List a cohort's dimensions",
+    description:
+      'Scoped like `GET /cohorts/:id`: a self-assessor sees the dimensions of ' +
+      'their own cohort only. These are the rows they score against.',
+  })
   @ApiOkResponse({ description: 'Dimensions ordered by display order' })
-  findByCohort(@Param('cohortId') cohortId: string): Promise<Dimension[]> {
-    return this.dimensionsService.findByCohort(cohortId);
+  findByCohort(
+    @Param('cohortId') cohortId: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<Dimension[]> {
+    return this.dimensionsService.findByCohort(cohortId, user);
   }
 
   @Patch('dimensions/:id')

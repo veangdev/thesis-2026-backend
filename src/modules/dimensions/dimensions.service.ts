@@ -4,6 +4,7 @@ import { CohortsService } from '../cohorts/cohorts.service';
 import { CreateDimensionDto } from './dto/create-dimension.dto';
 import { UpdateDimensionDto } from './dto/update-dimension.dto';
 import { Dimension } from '../../../generated/prisma/client';
+import { AuthenticatedUser } from '../../common/interfaces';
 
 @Injectable()
 export class DimensionsService {
@@ -13,7 +14,7 @@ export class DimensionsService {
   ) {}
 
   async create(cohortId: string, dto: CreateDimensionDto): Promise<Dimension> {
-    await this.cohortsService.findOne(cohortId);
+    await this.cohortsService.findRaw(cohortId);
     return this.dimensionsRepository.create({
       cohort: { connect: { id: cohortId } },
       name: dto.name,
@@ -23,8 +24,13 @@ export class DimensionsService {
     });
   }
 
-  async findByCohort(cohortId: string): Promise<Dimension[]> {
-    await this.cohortsService.findOne(cohortId);
+  async findByCohort(
+    cohortId: string,
+    user?: AuthenticatedUser,
+  ): Promise<Dimension[]> {
+    await this.cohortsService.findRaw(cohortId);
+    // Same read scope as the cohort itself, delegated so the two cannot drift.
+    await this.cohortsService.assertCanRead(cohortId, user);
     return this.dimensionsRepository.findByCohort(cohortId);
   }
 

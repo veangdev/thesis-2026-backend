@@ -23,7 +23,10 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/generated ./generated
 COPY --from=builder /app/prisma ./prisma
-COPY package.json yarn.lock prisma.config.ts ./
+# prisma/seed.ts imports assessment-logic straight from source, so the seed
+# step needs src/ present even though the app itself runs from dist/.
+COPY --from=builder /app/src ./src
+COPY package.json yarn.lock prisma.config.ts tsconfig.json ./
 COPY docker-entrypoint.sh ./docker-entrypoint.sh
 RUN chmod +x docker-entrypoint.sh
 

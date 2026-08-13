@@ -26,7 +26,8 @@ import { Role } from '../../common/enums';
 import { AuthenticatedUser } from '../../common/interfaces';
 import { AssignmentsService } from './assignments.service';
 import { CreateAssignmentDto } from './dto/create-assignment.dto';
-import { Paginated, PaginationQueryDto } from '../../common/dto/pagination.dto';
+import { Paginated } from '../../common/dto/pagination.dto';
+import { AssignmentQueryDto } from './dto/assignment-query.dto';
 import { MentorAssignment } from '../../../generated/prisma/client';
 
 @ApiTags('assignments')
@@ -62,13 +63,15 @@ export class AssignmentsController {
   @Get('assignments')
   @Roles(Role.program_coordinator)
   @ApiOperation({
-    summary: 'List facilitator↔self-assessor assignments (Coordinator)',
+    summary: 'List current facilitator↔self-assessor assignments (Coordinator)',
+    description:
+      'Returns assignments in force. Retired rows, left behind by a reassignment, are excluded.',
   })
   @ApiOkResponse({ description: 'Paginated assignments' })
   findAll(
-    @Query() pagination: PaginationQueryDto,
+    @Query() query: AssignmentQueryDto,
   ): Promise<Paginated<MentorAssignment>> {
-    return this.assignmentsService.findAll(pagination);
+    return this.assignmentsService.findAll(query);
   }
 
   @Get('users/me/facilitator')

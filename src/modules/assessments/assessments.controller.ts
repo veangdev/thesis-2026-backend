@@ -22,7 +22,7 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Role } from '../../common/enums';
 import { AuthenticatedUser } from '../../common/interfaces';
 import { AssessmentsService } from './assessments.service';
-import { AssessmentWithRelations } from './assessments.repository';
+import { AssessmentResponse } from './assessments.repository';
 import { AssessmentQueryDto } from './dto/assessment-query.dto';
 import { UpdateSelfAssessmentDto } from './dto/update-self-assessment.dto';
 import { UpdateMentorAssessmentDto } from './dto/update-mentor-assessment.dto';
@@ -44,7 +44,7 @@ export class AssessmentsController {
   findAll(
     @Query() query: AssessmentQueryDto,
     @CurrentUser() user: AuthenticatedUser,
-  ): Promise<Paginated<AssessmentWithRelations>> {
+  ): Promise<Paginated<AssessmentResponse>> {
     return this.assessmentsService.findAll(query, user);
   }
 
@@ -56,7 +56,7 @@ export class AssessmentsController {
   findOne(
     @Param('id') id: string,
     @CurrentUser() user: AuthenticatedUser,
-  ): Promise<AssessmentWithRelations> {
+  ): Promise<AssessmentResponse> {
     return this.assessmentsService.findOne(id, user);
   }
 
@@ -68,7 +68,7 @@ export class AssessmentsController {
     @Param('id') id: string,
     @Body() dto: UpdateSelfAssessmentDto,
     @CurrentUser() user: AuthenticatedUser,
-  ): Promise<AssessmentWithRelations> {
+  ): Promise<AssessmentResponse> {
     return this.assessmentsService.saveSelf(id, dto, user);
   }
 
@@ -82,7 +82,7 @@ export class AssessmentsController {
   submitSelf(
     @Param('id') id: string,
     @CurrentUser() user: AuthenticatedUser,
-  ): Promise<AssessmentWithRelations> {
+  ): Promise<AssessmentResponse> {
     return this.assessmentsService.submitSelf(id, user);
   }
 
@@ -96,7 +96,7 @@ export class AssessmentsController {
     @Param('id') id: string,
     @Body() dto: UpdateMentorAssessmentDto,
     @CurrentUser() user: AuthenticatedUser,
-  ): Promise<AssessmentWithRelations> {
+  ): Promise<AssessmentResponse> {
     return this.assessmentsService.saveMentor(id, dto, user);
   }
 
@@ -110,7 +110,7 @@ export class AssessmentsController {
   submitMentor(
     @Param('id') id: string,
     @CurrentUser() user: AuthenticatedUser,
-  ): Promise<AssessmentWithRelations> {
+  ): Promise<AssessmentResponse> {
     return this.assessmentsService.submitMentor(id, user);
   }
 }

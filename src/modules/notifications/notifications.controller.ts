@@ -8,10 +8,12 @@ import {
 } from '@nestjs/swagger';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { AuthenticatedUser } from '../../common/interfaces';
-import { NotificationsService } from './notifications.service';
+import {
+  NotificationResponse,
+  NotificationsService,
+} from './notifications.service';
 import { NotificationQueryDto } from './dto/notification-query.dto';
 import { Paginated } from '../../common/dto/pagination.dto';
-import { Notification } from '../../../generated/prisma/client';
 
 @ApiTags('notifications')
 @ApiBearerAuth()
@@ -22,11 +24,14 @@ export class NotificationsController {
 
   @Get()
   @ApiOperation({ summary: 'List the caller’s notifications' })
-  @ApiOkResponse({ description: 'Paginated notifications' })
+  @ApiOkResponse({
+    description:
+      'Paginated notifications, each carrying the `category` its `type` belongs to',
+  })
   findAll(
     @Query() query: NotificationQueryDto,
     @CurrentUser() user: AuthenticatedUser,
-  ): Promise<Paginated<Notification>> {
+  ): Promise<Paginated<NotificationResponse>> {
     return this.notificationsService.findForUser(user, query);
   }
 
@@ -45,7 +50,7 @@ export class NotificationsController {
   markRead(
     @Param('id') id: string,
     @CurrentUser() user: AuthenticatedUser,
-  ): Promise<Notification> {
+  ): Promise<NotificationResponse> {
     return this.notificationsService.markRead(id, user);
   }
 }

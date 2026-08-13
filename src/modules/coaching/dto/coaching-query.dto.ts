@@ -1,6 +1,7 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsDateString, IsOptional, IsString } from 'class-validator';
+import { IsDateString, IsEnum, IsOptional, IsString } from 'class-validator';
 import { PaginationQueryDto } from '../../../common/dto/pagination.dto';
+import { CoachingScope, CoachingStatus } from '../../../common/enums';
 
 export class CoachingQueryDto extends PaginationQueryDto {
   @ApiPropertyOptional({ description: 'Filter by facilitator id' })
@@ -14,6 +15,21 @@ export class CoachingQueryDto extends PaginationQueryDto {
   @IsString()
   @IsOptional()
   studentId?: string;
+
+  @ApiPropertyOptional({ description: 'Filter by the session cohort' })
+  @IsString()
+  @IsOptional()
+  cohortId?: string;
+
+  @ApiPropertyOptional({ enum: CoachingStatus })
+  @IsEnum(CoachingStatus)
+  @IsOptional()
+  status?: CoachingStatus;
+
+  @ApiPropertyOptional({ enum: CoachingScope })
+  @IsEnum(CoachingScope)
+  @IsOptional()
+  scope?: CoachingScope;
 
   @ApiPropertyOptional({ description: 'Scheduled at or after (ISO date)' })
   @IsDateString()

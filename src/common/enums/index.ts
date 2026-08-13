@@ -8,7 +8,12 @@ export {
   Role,
   AssessmentPeriodStatus,
   AssessmentStatus,
+  CohortStatus,
   CoachingScope,
   CoachingStatus,
+  CoachingTag,
+  Gender,
+  GoalStatus,
   NotificationType,
+  StudentClass,
 } from '../../../generated/prisma/enums';

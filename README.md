@@ -179,27 +179,55 @@ seeds demo data, then serves the API on **`http://localhost:8000`**
 yarn db:generate        # regenerate Prisma client
 yarn db:migrate         # create + apply a migration (dev)
 yarn db:migrate:prod    # apply migrations (prod / CI)
-yarn db:seed            # seed rich demo data (idempotent)
+yarn db:seed            # seed demo data (skips if the DB already has users)
+SEED_RESET=true yarn db:seed   # wipe every table first, then reseed
 yarn db:studio          # open Prisma Studio
 ```
 
 > Prisma 7 note: the datasource URL lives in `prisma.config.ts` and the
 > `PrismaClient` constructor — **never** add a `url` to `prisma/schema.prisma`.
 
-The seed is **idempotent** (it skips if `coordinator@pnc.edu` already exists) and
-creates: 1 coordinator, 6 facilitators, and 30 self-assessors across **3 cohorts**
-(mixed 1–5 and 1–10 scales), 8 dimensions per cohort, multiple periods with
-completed assessments showing improving / stagnant / regressing students (so
-coaching flags trigger), plus coaching sessions, goals, notifications, and
-achievements.
+### What the seed creates
 
-**Seeded demo accounts** (password `Password123!`):
+**Idempotent by default** — it skips when the database already has users, so
+`SEED_ON_START=true` in `docker-compose.yml` cannot wipe a running environment on
+restart. Pass `SEED_RESET=true` to deliberately truncate and rebuild.
 
-| Role                | Email                  |
-| ------------------- | ---------------------- |
-| Program Coordinator | `coordinator@pnc.edu`  |
-| Facilitator         | `facilitator@pnc.edu`  |
-| Self-Assessor       | `student@pnc.edu`      |
+**Deterministic** — a fixed PRNG seed means a reseed reproduces the dataset
+byte-for-byte, so a bug found on one machine reproduces on another.
+
+**Dates are relative to the day you seed**, never hard-coded. The open assessment
+cycle always contains today, "upcoming" coaching sessions are always in the
+future, and overdue goals are always genuinely overdue. A fixed calendar would rot
+into a dataset where every cycle is closed and nothing needs attention.
+
+| | Volume |
+| --- | --- |
+| Users | 1 coordinator · 8 facilitators · 64 self-assessors (all Cambodian names, family name first) |
+| Cohorts | 5 — two graduated, three active; 1–5 and 1–10 scales side by side |
+| Dimensions · periods | 40 · 26 (closed cycles, one open cycle per active cohort, one upcoming) |
+| Assessments | ~292 with ~2,336 dimension scores, spread across the whole status machine |
+| Coaching | 44 sessions (individual / group / class / batch, past and upcoming) · ~85 action items |
+| Growth | ~179 goals (active / achieved / archived) · ~181 notifications · ~173 achievements |
+| Admin | 4 notification rules · 45 audit-log entries in the interceptor's real format |
+
+Every self-assessor follows a growth archetype — improving, steady, stagnant, or
+regressing — so the analytics screens have real trends to chart and the §5.5
+coaching rule fires on its own rather than from hand-placed flags. About a quarter
+of self-assessors come out "at risk", which is the rule working, not noise.
+
+**Seeded demo accounts** (password `Password123!`). Names vary per reseed; the
+emails do not:
+
+| Role                | Email                 | Why this account |
+| ------------------- | --------------------- | ---------------- |
+| Program Coordinator | `coordinator@pnc.edu` | Full programme view across all five cohorts |
+| Facilitator         | `facilitator@pnc.edu` | Roster of 16, holding **one of every reviewable state** — including an `agreed` cycle, the only state "Complete cycle" can act on |
+| Self-Assessor       | `student@pnc.edu`     | Mid-programme student with four closed cycles of history **and** a clean `draft` in the open cycle, plus goals in all three statuses |
+
+The demo facilitator is the demo student's actual mentor, so the two logins can be
+used together. Every other account is `given.family@pnc.edu` with the same
+password — the seed prints the trio's names when it finishes.
 
 ## API documentation (Swagger)
 

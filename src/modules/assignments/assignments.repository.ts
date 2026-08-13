@@ -1,9 +1,13 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
-import { MentorAssignment } from '../../../generated/prisma/client';
-import { AuthenticatedUser } from '../../common/interfaces';
+import { MentorAssignment, Prisma } from '../../../generated/prisma/client';
 
-/** Columns safe to expose for a user (never the password hash). */
+/**
+ * Everything a user response needs, minus the password hash.
+ * `cohortMemberships` and `selfAssessorAssignments` are included because
+ * `UsersService.sanitize` flattens them into `cohortId`/`cohortName` and
+ * `facilitatorId`, which every user-shaped response carries.
+ */
 const SAFE_USER_SELECT = {
   id: true,
   name: true,
@@ -13,9 +17,25 @@ const SAFE_USER_SELECT = {
   expertiseTags: true,
   availability: true,
   isActive: true,
+  gender: true,
+  studentClass: true,
+  studentCode: true,
   createdAt: true,
   updatedAt: true,
+  cohortMemberships: {
+    select: { cohort: { select: { id: true, name: true } } },
+  },
+  selfAssessorAssignments: {
+    take: 1,
+    where: { active: true },
+    select: { facilitatorId: true },
+  },
 } as const;
+
+/** A user row as selected above — safe to return, not yet flattened. */
+export type SafeUserRow = Prisma.UserGetPayload<{
+  select: typeof SAFE_USER_SELECT;
+}>;
 
 @Injectable()
 export class AssignmentsRepository {
@@ -49,22 +69,65 @@ export class AssignmentsRepository {
   findAll(params?: {
     skip?: number;
     take?: number;
+    where?: Prisma.MentorAssignmentWhereInput;
   }): Promise<MentorAssignment[]> {
     return this.prisma.mentorAssignment.findMany({
+      where: params?.where,
       orderBy: { createdAt: 'desc' },
       skip: params?.skip,
       take: params?.take,
     });
   }
 
-  count(): Promise<number> {
-    return this.prisma.mentorAssignment.count();
+  count(where?: Prisma.MentorAssignmentWhereInput): Promise<number> {
+    return this.prisma.mentorAssignment.count({ where });
   }
 
-  /** Active students assigned to a facilitator, as sanitized user records. */
-  async studentsForFacilitator(
-    facilitatorId: string,
-  ): Promise<AuthenticatedUser[]> {
+  /**
+   * Retire every active assignment a student currently holds, so a reassignment
+   * cannot leave them on two facilitators' rosters at once. Rows are kept rather
+   * than deleted — assessment history references the assignment that was in
+   * force at the time.
+   */
+  async deactivateForStudent(
+    selfAssessorId: string,
+    exceptFacilitatorId?: string,
+  ): Promise<void> {
+    await this.prisma.mentorAssignment.updateMany({
+      where: {
+        selfAssessorId,
+        active: true,
+        ...(exceptFacilitatorId
+          ? { facilitatorId: { not: exceptFacilitatorId } }
+          : {}),
+      },
+      data: { active: false },
+    });
+  }
+
+  /** An existing row for this exact trio, whatever its active flag. */
+  findByTrio(data: {
+    facilitatorId: string;
+    selfAssessorId: string;
+    cohortId: string;
+  }): Promise<MentorAssignment | null> {
+    return this.prisma.mentorAssignment.findUnique({
+      where: {
+        facilitatorId_selfAssessorId_cohortId: data,
+      },
+    });
+  }
+
+  /** Bring a previously-retired assignment back into force. */
+  reactivate(id: string): Promise<MentorAssignment> {
+    return this.prisma.mentorAssignment.update({
+      where: { id },
+      data: { active: true },
+    });
+  }
+
+  /** Active students assigned to a facilitator. Shaped by the service. */
+  async studentsForFacilitator(facilitatorId: string): Promise<SafeUserRow[]> {
     const rows = await this.prisma.mentorAssignment.findMany({
       where: { facilitatorId, active: true },
       select: { selfAssessor: { select: SAFE_USER_SELECT } },

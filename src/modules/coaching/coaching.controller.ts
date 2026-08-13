@@ -25,7 +25,10 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Role } from '../../common/enums';
 import { AuthenticatedUser } from '../../common/interfaces';
 import { CoachingService } from './coaching.service';
-import { SessionWithRelations } from './coaching.repository';
+import {
+  ActionItemWithAssignee,
+  SessionWithRelations,
+} from './coaching.repository';
 import { CreateCoachingSessionDto } from './dto/create-coaching-session.dto';
 import { UpdateCoachingSessionDto } from './dto/update-coaching-session.dto';
 import {
@@ -34,7 +37,6 @@ import {
 } from './dto/action-item.dto';
 import { CoachingQueryDto } from './dto/coaching-query.dto';
 import { Paginated } from '../../common/dto/pagination.dto';
-import { ActionItem } from '../../../generated/prisma/client';
 
 @ApiTags('coaching')
 @ApiBearerAuth()
@@ -113,7 +115,7 @@ export class CoachingController {
     @Param('id') id: string,
     @Body() dto: CreateActionItemDto,
     @CurrentUser() user: AuthenticatedUser,
-  ): Promise<ActionItem> {
+  ): Promise<ActionItemWithAssignee> {
     return this.coachingService.addActionItem(id, dto, user);
   }
 
@@ -125,7 +127,7 @@ export class CoachingController {
     @Param('id') id: string,
     @Body() dto: UpdateActionItemDto,
     @CurrentUser() user: AuthenticatedUser,
-  ): Promise<ActionItem> {
+  ): Promise<ActionItemWithAssignee> {
     return this.coachingService.updateActionItem(id, dto, user);
   }
 

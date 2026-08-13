@@ -24,6 +24,14 @@ async function bootstrap() {
 
   setupApp(app);
 
+  // Behind a hosting proxy (Render, Fly, a reverse proxy) every request
+  // arrives from the load balancer's address, so `req.ip` collapses to a
+  // single value and the global 100 req/min throttler becomes one shared
+  // bucket for all users plus the platform's own health checks. Trusting one
+  // hop makes Express read the client address from X-Forwarded-For instead.
+  // Exactly one hop — trusting more would let a client forge its own IP.
+  app.set('trust proxy', 1);
+
   // Uploaded avatars are served outside the API prefix, e.g.
   // GET /uploads/avatars/<file>.png
   //

@@ -16,18 +16,66 @@ enum Role {
   self_assessor
 }
 
+/// Lifecycle of an assessment cycle — must match the frontend contract exactly.
+/// `active` is the open window students submit into; `completed` is closed.
 enum AssessmentPeriodStatus {
   upcoming
-  open
-  closed
+  active
+  completed
 }
 
+/// Self-reported gender, used for roster breakdowns on the Assessments screen.
+/// Optional on every user.
+enum Gender {
+  male
+  female
+}
+
+/// A cohort (batch) is subdivided into classes A/B/C. Self-assessors only.
+enum StudentClass {
+  A
+  B
+  C
+}
+
+/// Lifecycle of a cohort — must match the frontend contract exactly.
+enum CohortStatus {
+  active
+  completed
+  archived
+}
+
+/// Lifecycle of a growth goal — must match the frontend contract exactly.
+/// `achieved` is set explicitly rather than derived from `progressPercent`: a
+/// student may call a goal done below 100%, and `archived` has no progress
+/// equivalent at all.
+enum GoalStatus {
+  active
+  achieved
+  archived
+}
+
+/// Lifecycle of one assessment cycle — must match the frontend contract exactly.
+/// `agreed` is reached explicitly, when the facilitator marks the discussed
+/// scores as settled; only from there can the cycle be completed.
 enum AssessmentStatus {
   draft
   self_submitted
   mentor_review
   agreed
   completed
+}
+
+/// The facilitator's own judgement on a dimension during review — must match the
+/// frontend contract exactly. Distinct from `AssessmentScore.coachingRecommended`,
+/// which the system derives at completion (§5.5) and analytics counts as a
+/// coaching flag. One is an opinion, the other a computed fact; collapsing them
+/// would make the coaching rule unwritable.
+enum CoachingTag {
+  needs_focus
+  on_track
+  strength
+  coaching_recommended
 }
 
 enum CoachingScope {
@@ -43,11 +91,15 @@ enum CoachingStatus {
   cancelled
 }
 
+/// Finer-grained than the frontend's notification categories, because mail
+/// templating keys off the exact event. `NOTIFICATION_CATEGORY_BY_TYPE` collapses
+/// these onto the four categories the Notifications centre filters by.
 enum NotificationType {
   assessment_reminder
   coaching_reminder
   achievement
   submission
+  goal
   system
 }
 
@@ -64,6 +116,12 @@ model User {
   /// Days this facilitator is free to coach, as YYYY-MM-DD.
   availability  String[] @default([])
   isActive      Boolean  @default(true)
+  /// Self-reported; not every user has one on file.
+  gender        Gender?
+  /// Class within the cohort/batch. Self-assessors only.
+  studentClass  StudentClass?
+  /// Institution-issued student ID, e.g. "2024-ID-05". Self-assessors only.
+  studentCode   String?  @unique
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
@@ -120,18 +178,27 @@ model OtpCode {
 // ─────────────────────────────── Cohorts ───────────────────────────────
 
 model Cohort {
-  id              String   @id @default(cuid())
-  name            String
+  id String @id @default(cuid())
+  /// A batch **is** its intake year: always exactly `Batch YYYY`, and unique.
+  /// The format is enforced by `CreateCohortDto`/`UpdateCohortDto`, so this
+  /// index on the whole name is what makes the *year* unique — without the
+  /// format rule, `Batch 2026 — Data Science` and `Batch 2026 — Product Design`
+  /// are two distinct names and the index would let both through. Track and
+  /// scale live in `description`; they never qualify the name.
+  name            String       @unique
+  description     String?
   startDate       DateTime
   expectedEndDate DateTime
-  scoringScaleMax Int      @default(5) // allow 5 or 10
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  scoringScaleMax Int          @default(5) // allow 5 or 10
+  status          CohortStatus @default(active)
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
 
-  members     CohortMember[]
-  assignments MentorAssignment[]
-  dimensions  Dimension[]
-  periods     AssessmentPeriod[]
+  members          CohortMember[]
+  assignments      MentorAssignment[]
+  dimensions       Dimension[]
+  periods          AssessmentPeriod[]
+  coachingSessions CoachingSession[]
 
   @@map("cohorts")
 }
@@ -208,14 +275,26 @@ model AssessmentPeriod {
 }
 
 model Assessment {
-  id                String           @id @default(cuid())
-  studentId         String
-  periodId          String
-  status            AssessmentStatus @default(draft)
-  submittedAt       DateTime?
+  id        String           @id @default(cuid())
+  studentId String
+  periodId  String
+  status    AssessmentStatus @default(draft)
+
+  /// The student's summary of their own cycle, written alongside the per-dimension
+  /// reflections and shown to the facilitator during review.
+  overallReflection String?
+  /// The facilitator's closing summary, shared with the student on completion.
+  overallFeedback   String?
+
+  /// When the facilitator marked the discussed scores as agreed.
   mentorSubmittedAt DateTime?
-  createdAt         DateTime         @default(now())
-  updatedAt         DateTime         @updatedAt
+  /// When the cycle was completed. Distinct from `mentorSubmittedAt`: agreeing on
+  /// scores and closing the cycle are two steps in the status machine.
+  completedAt       DateTime?
+  submittedAt       DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   student User              @relation(fields: [studentId], references: [id], onDelete: Cascade)
   period  AssessmentPeriod  @relation(fields: [periodId], references: [id], onDelete: Cascade)
@@ -228,15 +307,19 @@ model Assessment {
 }
 
 model AssessmentScore {
-  id                   String  @id @default(cuid())
-  assessmentId         String
-  dimensionId          String
-  selfScore            Int?
-  selfReflection       String?
-  mentorScore          Int?
-  mentorNote           String?
-  agreedScore          Int?
-  coachingRecommended  Boolean @default(false)
+  id                  String  @id @default(cuid())
+  assessmentId        String
+  dimensionId         String
+  selfScore           Int?
+  selfReflection      String?
+  mentorScore         Int?
+  mentorNote          String?
+  agreedScore         Int?
+  /// Facilitator-authored during review. Nullable: not every dimension gets one.
+  coachingTag         CoachingTag?
+  /// System-derived at completion by `isCoachingRecommended` (§5.5), and counted
+  /// as a coaching flag by analytics. Never written by a client.
+  coachingRecommended Boolean      @default(false)
 
   assessment Assessment @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
   dimension  Dimension  @relation(fields: [dimensionId], references: [id], onDelete: Cascade)
@@ -253,6 +336,7 @@ model CoachingSession {
   title           String
   scope           CoachingScope
   facilitatorId   String
+  cohortId        String?
   scheduledAt     DateTime
   durationMinutes Int            @default(60)
   notes           String?
@@ -262,11 +346,14 @@ model CoachingSession {
   updatedAt       DateTime       @updatedAt
 
   facilitator      User                       @relation("FacilitatorSessions", fields: [facilitatorId], references: [id], onDelete: Cascade)
+  cohort           Cohort?                    @relation(fields: [cohortId], references: [id], onDelete: SetNull)
   participants     CoachingParticipant[]
   targetDimensions CoachingSessionDimension[]
   actionItems      ActionItem[]
 
   @@index([facilitatorId])
+  @@index([cohortId])
+  @@index([scheduledAt])
   @@map("coaching_sessions")
 }
 
@@ -321,10 +408,13 @@ model Goal {
   description       String?
   targetDimensionId String?
   dueDate           DateTime?
-  progressPercent   Int       @default(0)
+  progressPercent   Int        @default(0)
+  /// Score on the cohort's scale the student is aiming for on `targetDimension`.
+  targetScore       Int?
+  status            GoalStatus @default(active)
   milestones        Json?
-  createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
+  createdAt         DateTime   @default(now())
+  updatedAt         DateTime   @updatedAt
 
   student         User       @relation(fields: [studentId], references: [id], onDelete: Cascade)
   targetDimension Dimension? @relation(fields: [targetDimensionId], references: [id], onDelete: SetNull)
@@ -335,11 +425,14 @@ model Goal {
 }
 
 model Notification {
-  id        String           @id @default(cuid())
-  userId    String
-  type      NotificationType
-  title     String
-  body      String
+  id     String           @id @default(cuid())
+  userId String
+  type   NotificationType
+  title  String
+  body   String
+  /// In-app destination the notification links to, as a root-relative path
+  /// (e.g. `/assessments/abc`). Null when the event has nowhere useful to go.
+  href      String?
   readAt    DateTime?
   createdAt DateTime         @default(now())
 
@@ -347,6 +440,21 @@ model Notification {
 
   @@index([userId])
   @@map("notifications")
+}
+
+/// Program-wide notification toggles the Program Coordinator controls on the
+/// Settings screen.
+///
+/// Only the *state* lives here — the catalogue of rules (key, label,
+/// description) is a backend constant, because the backend is what acts on
+/// them when it decides whether to send a mail. A rule with no row yet falls
+/// back to the catalogue's default, so adding a rule needs no data migration.
+model NotificationRule {
+  key       String   @id
+  enabled   Boolean
+  updatedAt DateTime @updatedAt
+
+  @@map("notification_rules")
 }
 
 model Achievement {

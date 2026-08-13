@@ -2,7 +2,7 @@ import { Test } from '@nestjs/testing';
 import { ConflictException, NotFoundException } from '@nestjs/common';
 import { UsersService } from './users.service';
 import { UsersRepository } from './users.repository';
-import { Role } from '../../common/enums';
+import { Gender, Role, StudentClass } from '../../common/enums';
 
 describe('UsersService', () => {
   let service: UsersService;
@@ -18,6 +18,7 @@ describe('UsersService', () => {
     delete: jest.fn(),
     cohortExists: jest.fn(),
     setCohort: jest.fn(),
+    findByStudentCode: jest.fn(),
   };
 
   const userRecord = {
@@ -30,6 +31,9 @@ describe('UsersService', () => {
     expertiseTags: [],
     availability: [],
     isActive: true,
+    gender: Gender.female,
+    studentClass: StudentClass.A,
+    studentCode: '2024-ID-05',
     createdAt: new Date(),
     updatedAt: new Date(),
   };
@@ -72,6 +76,90 @@ describe('UsersService', () => {
           password: 'password123',
         }),
       ).rejects.toThrow(ConflictException);
+    });
+
+    it('persists the roster fields', async () => {
+      repo.findByEmail.mockResolvedValue(null);
+      repo.findByStudentCode.mockResolvedValue(null);
+      repo.create.mockResolvedValue(userRecord);
+      repo.findById.mockResolvedValue(userRecord);
+
+      await service.create({
+        name: 'Jane',
+        email: userRecord.email,
+        password: 'password123',
+        gender: Gender.female,
+        studentClass: StudentClass.A,
+        studentCode: '2024-ID-05',
+      });
+
+      expect(repo.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          gender: Gender.female,
+          studentClass: StudentClass.A,
+          studentCode: '2024-ID-05',
+        }),
+      );
+    });
+
+    it('rejects a student ID already held by someone else', async () => {
+      repo.findByEmail.mockResolvedValue(null);
+      repo.findByStudentCode.mockResolvedValue({ id: 'someone-else' });
+
+      await expect(
+        service.create({
+          name: 'Jane',
+          email: 'new@pnc.edu',
+          password: 'password123',
+          studentCode: '2024-ID-05',
+        }),
+      ).rejects.toThrow(ConflictException);
+      expect(repo.create).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('createMany', () => {
+    it('rejects a batch that repeats a student ID before writing anything', async () => {
+      await expect(
+        service.createMany({
+          users: [
+            {
+              name: 'A',
+              email: 'a@pnc.edu',
+              password: 'password123',
+              studentCode: '2024-ID-01',
+            },
+            {
+              name: 'B',
+              email: 'b@pnc.edu',
+              password: 'password123',
+              studentCode: '2024-ID-01',
+            },
+          ],
+        }),
+      ).rejects.toThrow(ConflictException);
+      expect(repo.createMany).not.toHaveBeenCalled();
+    });
+
+    it('re-reads created users so enrolled cohorts are not reported as null', async () => {
+      repo.createMany.mockResolvedValue([{ id: 'user-1' }]);
+      repo.findAll.mockResolvedValue([
+        {
+          ...userRecord,
+          cohortMemberships: [{ cohort: { id: 'c1', name: 'Batch 2025' } }],
+        },
+      ]);
+
+      const created = await service.createMany({
+        users: [{ name: 'A', email: 'a@pnc.edu', password: 'password123' }],
+        cohortId: 'c1',
+      });
+
+      expect(repo.findAll).toHaveBeenCalledWith({
+        where: { id: { in: ['user-1'] } },
+      });
+      expect(created[0].cohortId).toBe('c1');
+      expect(created[0].cohortName).toBe('Batch 2025');
     });
   });
 
@@ -163,6 +251,45 @@ describe('UsersService', () => {
     });
   });
 
+  describe('sanitize', () => {
+    it('flattens the active mentor assignment onto facilitatorId', () => {
+      const result = service.sanitize({
+        ...userRecord,
+        selfAssessorAssignments: [{ facilitatorId: 'facilitator-9' }],
+      });
+      expect(result.facilitatorId).toBe('facilitator-9');
+      expect(result).not.toHaveProperty('selfAssessorAssignments');
+    });
+
+    // The roster renders the Facilitator column straight from the row rather
+    // than joining against a separately-fetched facilitator list.
+    it('flattens the facilitator name alongside the id', () => {
+      const result = service.sanitize({
+        ...userRecord,
+        selfAssessorAssignments: [
+          { facilitatorId: 'facilitator-9', facilitator: { name: 'Dara Kim' } },
+        ],
+      });
+      expect(result.facilitatorName).toBe('Dara Kim');
+    });
+
+    it('reports facilitatorId and facilitatorName as null when nobody is assigned', () => {
+      const result = service.sanitize({
+        ...userRecord,
+        selfAssessorAssignments: [],
+      });
+      expect(result.facilitatorId).toBeNull();
+      expect(result.facilitatorName).toBeNull();
+    });
+
+    it('carries the roster fields through untouched', () => {
+      const result = service.sanitize(userRecord);
+      expect(result.gender).toBe(Gender.female);
+      expect(result.studentClass).toBe(StudentClass.A);
+      expect(result.studentCode).toBe('2024-ID-05');
+    });
+  });
+
   describe('findAll', () => {
     it('returns a paginated, sanitized envelope', async () => {
       repo.findAll.mockResolvedValue([userRecord, userRecord]);
@@ -173,6 +300,101 @@ describe('UsersService', () => {
       expect(result.meta).toEqual({ page: 1, pageSize: 20, total: 2 });
       expect(result.data).toHaveLength(2);
       result.data.forEach((u) => expect(u).not.toHaveProperty('passwordHash'));
+    });
+
+    it('filters on the roster fields in SQL', async () => {
+      repo.findAll.mockResolvedValue([]);
+      repo.count.mockResolvedValue(0);
+
+      await service.findAll({
+        page: 1,
+        pageSize: 20,
+        gender: Gender.female,
+        studentClass: StudentClass.B,
+        isActive: false,
+        cohortId: 'c1',
+      });
+
+      expect(repo.findAll).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: {
+            gender: Gender.female,
+            studentClass: StudentClass.B,
+            isActive: false,
+            cohortMemberships: { some: { cohortId: 'c1' } },
+          },
+        }),
+      );
+    });
+
+    it('resolves facilitatorId through the active assignment only', async () => {
+      repo.findAll.mockResolvedValue([]);
+      repo.count.mockResolvedValue(0);
+
+      await service.findAll({
+        page: 1,
+        pageSize: 20,
+        facilitatorId: 'facilitator-9',
+      });
+
+      expect(repo.findAll).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: {
+            selfAssessorAssignments: {
+              some: { facilitatorId: 'facilitator-9', active: true },
+            },
+          },
+        }),
+      );
+    });
+
+    it('searches the student ID alongside name and email', async () => {
+      repo.findAll.mockResolvedValue([]);
+      repo.count.mockResolvedValue(0);
+
+      await service.findAll({ page: 1, pageSize: 20, search: '2024-ID' });
+
+      const { where } = repo.findAll.mock.calls[0][0] as {
+        where: { OR: Array<Record<string, unknown>> };
+      };
+      expect(where.OR).toEqual(
+        expect.arrayContaining([
+          { studentCode: { contains: '2024-ID', mode: 'insensitive' } },
+        ]),
+      );
+    });
+
+    it('sorts by class with name as the tiebreak, so order is stable', async () => {
+      repo.findAll.mockResolvedValue([]);
+      repo.count.mockResolvedValue(0);
+
+      await service.findAll({ page: 1, pageSize: 20, sortBy: 'class' });
+
+      expect(repo.findAll).toHaveBeenCalledWith(
+        expect.objectContaining({
+          orderBy: [{ studentClass: 'asc' }, { name: 'asc' }],
+        }),
+      );
+    });
+
+    it('stays newest-first when no sort is requested', async () => {
+      repo.findAll.mockResolvedValue([]);
+      repo.count.mockResolvedValue(0);
+
+      await service.findAll({ page: 1, pageSize: 20 });
+
+      expect(repo.findAll).toHaveBeenCalledWith(
+        expect.objectContaining({ orderBy: [{ createdAt: 'desc' }] }),
+      );
+    });
+
+    it('counts with the same predicate it lists with', async () => {
+      repo.findAll.mockResolvedValue([]);
+      repo.count.mockResolvedValue(0);
+
+      await service.findAll({ page: 1, pageSize: 20, gender: Gender.male });
+
+      expect(repo.count).toHaveBeenCalledWith({ gender: Gender.male });
     });
   });
 });

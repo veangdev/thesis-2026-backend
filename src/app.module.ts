@@ -15,6 +15,7 @@ import { PeriodsModule } from './modules/periods/periods.module';
 import { AssignmentsModule } from './modules/assignments/assignments.module';
 import { AssessmentsModule } from './modules/assessments/assessments.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
+import { NotificationRulesModule } from './modules/notification-rules/notification-rules.module';
 import { AnalyticsModule } from './modules/analytics/analytics.module';
 import { GoalsModule } from './modules/goals/goals.module';
 import { CoachingModule } from './modules/coaching/coaching.module';
@@ -44,6 +45,7 @@ import { AuditModule } from './modules/audit/audit.module';
     AssignmentsModule,
     AssessmentsModule,
     NotificationsModule,
+    NotificationRulesModule,
     AnalyticsModule,
     GoalsModule,
     CoachingModule,

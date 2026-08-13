@@ -1,6 +1,11 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { Prisma } from '../../../generated/prisma/client';
+import {
+  AssessmentPeriodStatus,
+  AssessmentStatus,
+  Role,
+} from '../../common/enums';
 
 const SAFE_USER_SELECT = {
   id: true,
@@ -25,6 +30,13 @@ const WITH_SCORES_AND_STUDENT = {
   student: { select: SAFE_USER_SELECT },
 } satisfies Prisma.AssessmentInclude;
 
+/** Completed assessments program-wide need their cohort's scale to score risk. */
+const WITH_SCORES_STUDENT_AND_SCALE = {
+  scores: { include: { dimension: true } },
+  period: { include: { cohort: { select: { scoringScaleMax: true } } } },
+  student: { select: SAFE_USER_SELECT },
+} satisfies Prisma.AssessmentInclude;
+
 export type AssessmentForStudent = Prisma.AssessmentGetPayload<{
   include: typeof WITH_SCORES;
 }>;
@@ -34,6 +46,46 @@ export type AssessmentForCohort = Prisma.AssessmentGetPayload<{
 export type GapAssessment = Prisma.AssessmentGetPayload<{
   include: typeof WITH_SCORES_AND_STUDENT;
 }>;
+export type AssessmentWithScale = Prisma.AssessmentGetPayload<{
+  include: typeof WITH_SCORES_STUDENT_AND_SCALE;
+}>;
+
+export interface CohortPeriod {
+  id: string;
+  name: string;
+  status: AssessmentPeriodStatus;
+}
+
+// ── Raw rows feeding the coordinator activity feed ───────────────────────────
+
+export interface RecentAssessmentRow {
+  id: string;
+  status: AssessmentStatus;
+  updatedAt: Date;
+  student: { name: string };
+  period: { name: string };
+}
+
+export interface RecentCoachingRow {
+  id: string;
+  title: string;
+  createdAt: Date;
+  facilitator: { name: string };
+}
+
+export interface RecentGoalRow {
+  id: string;
+  title: string;
+  createdAt: Date;
+  student: { name: string };
+}
+
+export interface RecentUserRow {
+  id: string;
+  name: string;
+  role: Role;
+  createdAt: Date;
+}
 
 @Injectable()
 export class AnalyticsRepository {
@@ -42,6 +94,19 @@ export class AnalyticsRepository {
   completedForStudent(studentId: string): Promise<AssessmentForStudent[]> {
     return this.prisma.assessment.findMany({
       where: { studentId, status: 'completed' },
+      include: WITH_SCORES,
+      orderBy: { period: { startDate: 'asc' } },
+    });
+  }
+
+  /**
+   * Every assessment for a student regardless of status. The student radar
+   * charts one entry per cohort period — including cycles still in progress —
+   * so journey progress can read "2 of 4 cycles" rather than always 100%.
+   */
+  allForStudent(studentId: string): Promise<AssessmentForStudent[]> {
+    return this.prisma.assessment.findMany({
+      where: { studentId },
       include: WITH_SCORES,
       orderBy: { period: { startDate: 'asc' } },
     });
@@ -87,12 +152,12 @@ export class AnalyticsRepository {
     });
   }
 
-  periodsForCohort(
-    cohortId: string,
-  ): Promise<Array<{ id: string; name: string }>> {
+  /** Chronological — completion rates and the trendline are read as a series. */
+  periodsForCohort(cohortId: string): Promise<CohortPeriod[]> {
     return this.prisma.assessmentPeriod.findMany({
       where: { cohortId },
-      select: { id: true, name: true },
+      select: { id: true, name: true, status: true },
+      orderBy: { startDate: 'asc' },
     });
   }
 
@@ -110,8 +175,172 @@ export class AnalyticsRepository {
     });
   }
 
+  /**
+   * The cohort the public landing page describes: the most recently started
+   * active one *with students on it*. Its dimensions and scale are what a
+   * visitor would actually be assessed on, so the marketing copy quotes it
+   * rather than a hard-coded list.
+   *
+   * Ordered by roster size, not by date. A date sort is trivially captured by
+   * test or placeholder rows — a one-person cohort dated next January outranks
+   * the real programme — and the public page would then advertise that row's
+   * single dimension as the whole framework. The biggest active roster is the
+   * programme a visitor would actually be joining; `startDate` only breaks ties.
+   */
+  currentCohort(): Promise<{
+    id: string;
+    name: string;
+    scoringScaleMax: number;
+  } | null> {
+    return this.prisma.cohort.findFirst({
+      where: { status: 'active', members: { some: {} } },
+      orderBy: [{ members: { _count: 'desc' } }, { startDate: 'desc' }],
+      select: { id: true, name: true, scoringScaleMax: true },
+    });
+  }
+
+  /** Active-cohort scale range, for the "1–N scoring scale" claim. */
+  activeScaleRange(): Promise<{
+    _min: { scoringScaleMax: number | null };
+    _max: { scoringScaleMax: number | null };
+  }> {
+    return this.prisma.cohort.aggregate({
+      where: { status: 'active' },
+      _min: { scoringScaleMax: true },
+      _max: { scoringScaleMax: true },
+    });
+  }
+
+  countCompletedAssessments(): Promise<number> {
+    return this.prisma.assessment.count({ where: { status: 'completed' } });
+  }
+
+  /** Active self-assessors, counted for the public programme summary. */
+  countActiveByRole(role: Role): Promise<number> {
+    return this.prisma.user.count({ where: { role, isActive: true } });
+  }
+
+  /** Dimensions with their descriptions — the landing page renders both. */
+  describedDimensionsForCohort(
+    cohortId: string,
+  ): Promise<Array<{ name: string; description: string | null }>> {
+    return this.prisma.dimension.findMany({
+      where: { cohortId, isActive: true },
+      select: { name: true, description: true },
+      orderBy: { order: 'asc' },
+    });
+  }
+
   totalCohorts(): Promise<number> {
     return this.prisma.cohort.count();
+  }
+
+  activeCohorts(): Promise<number> {
+    return this.prisma.cohort.count({ where: { status: 'active' } });
+  }
+
+  /**
+   * Every completed assessment program-wide, carrying its cohort's scoring
+   * scale. One query feeds the at-risk KPI across all cohorts — the alternative
+   * was the frontend fetching full analytics per cohort and summing.
+   */
+  completedWithScale(): Promise<AssessmentWithScale[]> {
+    return this.prisma.assessment.findMany({
+      where: { status: 'completed' },
+      include: WITH_SCORES_STUDENT_AND_SCALE,
+      orderBy: { period: { startDate: 'asc' } },
+    });
+  }
+
+  /** Assessment counts per status within currently open periods (SQL-side). */
+  countsByStatusForOpenPeriods() {
+    return this.prisma.assessment.groupBy({
+      by: ['status'],
+      where: { period: { status: AssessmentPeriodStatus.active } },
+      _count: { _all: true },
+    });
+  }
+
+  /** Assessment counts per student+status — powers facilitator workload. */
+  countsByStudentAndStatus(studentIds: string[]) {
+    if (studentIds.length === 0) return Promise.resolve([]);
+    return this.prisma.assessment.groupBy({
+      by: ['studentId', 'status'],
+      where: { studentId: { in: studentIds } },
+      _count: { _all: true },
+    });
+  }
+
+  /** Self-assessor ids per facilitator, for every active assignment at once. */
+  activeAssignments(): Promise<
+    Array<{ facilitatorId: string; selfAssessorId: string }>
+  > {
+    return this.prisma.mentorAssignment.findMany({
+      where: { active: true },
+      select: { facilitatorId: true, selfAssessorId: true },
+    });
+  }
+
+  /** Submission timestamps within the window, for the weekly activity trend. */
+  async submissionTimestampsSince(since: Date): Promise<Date[]> {
+    const rows = await this.prisma.assessment.findMany({
+      where: { submittedAt: { gte: since } },
+      select: { submittedAt: true },
+    });
+    return rows
+      .map((row) => row.submittedAt)
+      .filter((at): at is Date => at !== null);
+  }
+
+  // ── Activity feed sources ──────────────────────────────────────────────────
+
+  recentAssessments(take: number): Promise<RecentAssessmentRow[]> {
+    return this.prisma.assessment.findMany({
+      where: { status: { not: 'draft' } },
+      select: {
+        id: true,
+        status: true,
+        updatedAt: true,
+        student: { select: { name: true } },
+        period: { select: { name: true } },
+      },
+      orderBy: { updatedAt: 'desc' },
+      take,
+    });
+  }
+
+  recentCoachingSessions(take: number): Promise<RecentCoachingRow[]> {
+    return this.prisma.coachingSession.findMany({
+      select: {
+        id: true,
+        title: true,
+        createdAt: true,
+        facilitator: { select: { name: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+      take,
+    });
+  }
+
+  recentGoals(take: number): Promise<RecentGoalRow[]> {
+    return this.prisma.goal.findMany({
+      select: {
+        id: true,
+        title: true,
+        createdAt: true,
+        student: { select: { name: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+      take,
+    });
+  }
+
+  recentUsers(take: number): Promise<RecentUserRow[]> {
+    return this.prisma.user.findMany({
+      select: { id: true, name: true, role: true, createdAt: true },
+      orderBy: { createdAt: 'desc' },
+      take,
+    });
   }
 
   periodsByStatus() {
@@ -130,13 +359,6 @@ export class AnalyticsRepository {
       where: { role: 'facilitator' },
       select: { id: true, name: true },
       orderBy: { name: 'asc' },
-    });
-  }
-
-  countCompletedForStudents(studentIds: string[]): Promise<number> {
-    if (studentIds.length === 0) return Promise.resolve(0);
-    return this.prisma.assessment.count({
-      where: { status: 'completed', studentId: { in: studentIds } },
     });
   }
 }

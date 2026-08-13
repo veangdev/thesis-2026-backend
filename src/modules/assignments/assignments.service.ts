@@ -8,13 +8,10 @@ import { UsersService } from '../users/users.service';
 import { CohortsService } from '../cohorts/cohorts.service';
 import { CreateAssignmentDto } from './dto/create-assignment.dto';
 import { Role } from '../../common/enums';
-import {
-  Paginated,
-  PaginationQueryDto,
-  paginate,
-} from '../../common/dto/pagination.dto';
+import { Paginated, paginate } from '../../common/dto/pagination.dto';
+import { AssignmentQueryDto } from './dto/assignment-query.dto';
 import { AuthenticatedUser } from '../../common/interfaces';
-import { MentorAssignment } from '../../../generated/prisma/client';
+import { MentorAssignment, Prisma } from '../../../generated/prisma/client';
 
 @Injectable()
 export class AssignmentsService {
@@ -45,7 +42,29 @@ export class AssignmentsService {
         'Student is not enrolled in a cohort; provide a cohortId explicitly.',
       );
     }
-    await this.cohortsService.findOne(cohortId);
+    await this.cohortsService.findRaw(cohortId);
+
+    // A self-assessor has exactly one facilitator. Assigning them to a new one
+    // retires the previous assignment rather than adding a second — otherwise
+    // they appear on both rosters and `facilitatorId` on their user record
+    // resolves to whichever active row Prisma returns first.
+    await this.assignmentsRepository.deactivateForStudent(
+      dto.selfAssessorId,
+      dto.facilitatorId,
+    );
+
+    // The trio is unique, so a student returning to an earlier facilitator has
+    // a retired row waiting rather than room for a new one.
+    const existing = await this.assignmentsRepository.findByTrio({
+      facilitatorId: dto.facilitatorId,
+      selfAssessorId: dto.selfAssessorId,
+      cohortId,
+    });
+    if (existing) {
+      return existing.active
+        ? existing
+        : this.assignmentsRepository.reactivate(existing.id);
+    }
 
     return this.assignmentsRepository.create({
       facilitatorId: dto.facilitatorId,
@@ -62,23 +81,37 @@ export class AssignmentsService {
     await this.assignmentsRepository.delete(id);
   }
 
+  /**
+   * Current assignments, newest first. Retired rows are excluded: the list is
+   * read as "who mentors whom right now", and a caller resolving a student's
+   * assignment id from it would otherwise be handed a historical row and unassign
+   * nothing.
+   */
   async findAll(
-    pagination: PaginationQueryDto,
+    query: AssignmentQueryDto,
   ): Promise<Paginated<MentorAssignment>> {
-    const page = pagination.page ?? 1;
-    const pageSize = pagination.pageSize ?? 20;
+    const page = query.page ?? 1;
+    const pageSize = query.pageSize ?? 20;
+    const where: Prisma.MentorAssignmentWhereInput = { active: true };
+    if (query.cohortId) where.cohortId = query.cohortId;
+    if (query.facilitatorId) where.facilitatorId = query.facilitatorId;
     const [data, total] = await Promise.all([
       this.assignmentsRepository.findAll({
         skip: (page - 1) * pageSize,
         take: pageSize,
+        where,
       }),
-      this.assignmentsRepository.count(),
+      this.assignmentsRepository.count(where),
     ]);
     return paginate(data, total, page, pageSize);
   }
 
-  studentsForFacilitator(facilitatorId: string): Promise<AuthenticatedUser[]> {
-    return this.assignmentsRepository.studentsForFacilitator(facilitatorId);
+  async studentsForFacilitator(
+    facilitatorId: string,
+  ): Promise<AuthenticatedUser[]> {
+    const rows =
+      await this.assignmentsRepository.studentsForFacilitator(facilitatorId);
+    return rows.map((row) => this.usersService.sanitize(row));
   }
 
   studentIdsForFacilitator(facilitatorId: string): Promise<string[]> {
