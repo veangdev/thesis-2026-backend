@@ -13,7 +13,11 @@ databases:
     databaseName: pnc_journey_star
     user: pnc_journey
     region: singapore
-    plan: basic-256mb
+    # Free Postgres is time-limited — Render expires the instance after a set
+    # window (historically ~30 days) and it is NOT restored automatically.
+    # Check the expiry date on the database's dashboard page and back up with
+    # `pg_dump` before it lapses.
+    plan: free
     # Matches the postgres:16-alpine image used by docker-compose locally, so
     # the migrations run against the same major version they were built on.
     postgresMajorVersion: '16'
@@ -23,9 +27,11 @@ services:
     name: pnc-journey-api
     runtime: docker
     region: singapore
-    # A disk requires a paid instance, and the free tier's ~50s cold start
-    # after 15 minutes idle is a poor demo. Starter stays warm.
-    plan: starter
+    # Free spins the container down after ~15 minutes idle; the next request
+    # pays a cold start of roughly a minute while the image boots and the
+    # migrations re-run. Hit the health endpoint a few minutes before a live
+    # demo so the first real request is not the one that wakes it.
+    plan: free
     branch: main
     dockerfilePath: ./Dockerfile
     dockerContext: .
@@ -33,14 +39,10 @@ services:
     healthCheckPath: /api/v1/health
     autoDeploy: true
 
-    # Render's filesystem is ephemeral: without this, every deploy wipes the
-    # avatars written by multer in users.controller.ts. The mount path is fed
-    # to the app through UPLOAD_DIR below; the controller creates the
-    # `avatars` subdirectory itself via mkdirSync(recursive).
-    disk:
-      name: uploads
-      mountPath: /data
-      sizeGB: 1
+    # NOTE: no `disk:` block — Render disks require a paid instance. Avatars
+    # written by multer in users.controller.ts therefore live on the
+    # container's ephemeral layer and are lost on every deploy, restart, and
+    # idle spin-down. See UPLOAD_DIR below.
 
     envVars:
       - key: NODE_ENV
@@ -77,16 +79,21 @@ services:
         sync: false
 
       # prisma/seed.ts calls resetDatabase(), which deleteMany()s every table
-      # including users. docker-entrypoint.sh runs on EVERY boot, so leaving
-      # this true would wipe production on each deploy and each restart.
-      # Seed once by hand from the Render shell instead.
+      # including users. docker-entrypoint.sh runs on EVERY boot, and a free
+      # instance boots every time it wakes from an idle spin-down — so leaving
+      # this true would silently wipe the database several times a day.
+      # Seed once from your own machine against the external DATABASE_URL
+      # instead (the Render shell is not available on free instances).
       - key: SEED_ON_START
         value: 'false'
 
-      # Persisted uploads land on the disk mounted above rather than in the
-      # container's ephemeral layer.
+      # No disk on the free plan, so this is the container's own filesystem
+      # and uploaded avatars do not survive a redeploy or a spin-down. The
+      # records still point at the missing files, so those images render
+      # broken until re-uploaded. Attach a disk and switch this to
+      # /data/uploads if the uploads need to persist.
       - key: UPLOAD_DIR
-        value: /data/uploads
+        value: uploads
       - key: UPLOAD_PUBLIC_PATH
         value: /uploads
 

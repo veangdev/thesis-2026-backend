@@ -23,6 +23,13 @@ describe('Assessment lifecycle (e2e)', () => {
   });
 
   const unique = Date.now();
+  /**
+   * `CreateCohortDto` pins the name to exactly `Batch YYYY`, and the name is
+   * unique — so unlike the emails below, this cannot carry `unique` to keep
+   * runs from colliding. A year the seed never uses keeps it clear of demo
+   * data; `beforeAll` drops the leftover row so re-runs stay idempotent.
+   */
+  const cohortName = 'Batch 2099';
   const coordinatorEmail = `coord-${unique}@pnc.edu`;
   const facilitatorEmail = `fac-${unique}@pnc.edu`;
   const studentEmail = `stu-${unique}@pnc.edu`;
@@ -52,6 +59,10 @@ describe('Assessment lifecycle (e2e)', () => {
     await app.init();
     server = app.getHttpServer();
 
+    // Members, assignments, dimensions and periods all cascade off the cohort,
+    // so this clears everything a previous run left behind under that name.
+    await prisma.cohort.deleteMany({ where: { name: cohortName } });
+
     // Bootstrap a coordinator directly (POST /users is coordinator-only).
     await prisma.user.create({
       data: {
@@ -77,7 +88,7 @@ describe('Assessment lifecycle (e2e)', () => {
       .post(`${PREFIX}/cohorts`)
       .set(asCoordinator())
       .send({
-        name: `E2E Cohort ${unique}`,
+        name: cohortName,
         startDate: '2026-01-01T00:00:00.000Z',
         expectedEndDate: '2028-01-01T00:00:00.000Z',
         scoringScaleMax: 5,
@@ -149,7 +160,9 @@ describe('Assessment lifecycle (e2e)', () => {
     await request(server)
       .patch(`${PREFIX}/periods/${period.body.id}`)
       .set(asCoordinator())
-      .send({ status: 'open' })
+      // `active` is what launches the cycle — AssessmentPeriodStatus is
+      // upcoming | active | completed, with no `open`.
+      .send({ status: 'active' })
       .expect(200);
 
     const studentToken = await login(studentEmail);
@@ -188,7 +201,7 @@ describe('Assessment lifecycle (e2e)', () => {
   it('mentor reviews, completes, and a weak agreed score is flagged for coaching', async () => {
     const facilitatorToken = await login(facilitatorEmail);
 
-    await request(server)
+    const agreed = await request(server)
       .patch(`${PREFIX}/assessments/${assessmentId}/mentor`)
       .set({ Authorization: `Bearer ${facilitatorToken}` })
       .send({
@@ -200,8 +213,12 @@ describe('Assessment lifecycle (e2e)', () => {
             mentorNote: 'Needs support here',
           },
         ],
+        // Completing is only reachable from `agreed`, and agreeing is its own
+        // recorded step — without this the submit below is a 400.
+        markAgreed: true,
       })
       .expect(200);
+    expect(agreed.body.status).toBe('agreed');
 
     const completed = await request(server)
       .post(`${PREFIX}/assessments/${assessmentId}/mentor/submit`)
@@ -258,7 +275,9 @@ describe('Assessment lifecycle (e2e)', () => {
   it('delivers lifecycle notifications to the student and marks them read', async () => {
     const studentToken = await login(studentEmail);
     const list = await request(server)
-      .get(`${PREFIX}/notifications?unread=true`)
+      // The filter is `read`, not `unread` — and an undeclared query param is
+      // a 400 under forbidNonWhitelisted, not a silently ignored one.
+      .get(`${PREFIX}/notifications?read=false`)
       .set({ Authorization: `Bearer ${studentToken}` })
       .expect(200);
     const body = list.body as { data: unknown[] };
@@ -341,8 +360,12 @@ describe('Assessment lifecycle (e2e)', () => {
       .expect(200);
     const body = logs.body as { data: { entity: string; action: string }[] };
     expect(body.data.length).toBeGreaterThanOrEqual(1);
+    // `action` reads `<entity>.<verb>`; the bare HTTP method it once stored
+    // told a coordinator nothing on its own.
     expect(
-      body.data.some((l) => l.entity === 'goals' && l.action === 'POST'),
+      body.data.some(
+        (l) => l.entity === 'goals' && l.action === 'goals.created',
+      ),
     ).toBe(true);
   });
 
