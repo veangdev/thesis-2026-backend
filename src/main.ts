@@ -62,9 +62,19 @@ async function bootstrap() {
     swaggerOptions: { persistAuthorization: true },
   });
 
+  // Cloud Run (and Docker generally) stops a container with SIGTERM. Without
+  // shutdown hooks Nest never runs OnModuleDestroy, so PrismaService keeps its
+  // pg pool open and Cloud SQL is left to time the connections out itself —
+  // which burns slots against the instance's connection limit on every
+  // scale-down and every redeploy.
+  app.enableShutdownHooks();
+
   const prefix = config.get<string>('appPrefix') ?? 'api/v1';
   const port = config.get<number>('port') ?? 3000;
-  await app.listen(port);
+  // Bind all interfaces explicitly: Cloud Run only routes traffic to a
+  // container listening on 0.0.0.0:$PORT, and relying on the framework's
+  // default host is the classic cause of a failed startup probe.
+  await app.listen(port, '0.0.0.0');
   logger.log(`Application running on http://localhost:${port}/${prefix}`);
   logger.log(`Swagger docs available at http://localhost:${port}/api/docs`);
 }
