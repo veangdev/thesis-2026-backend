@@ -29,3 +29,7 @@ yarn-error.log*
 
 # Uploaded files (avatars) — runtime artifacts, not source
 uploads/
+
+# Cloud Run env files with real values; only the template is tracked
+deploy/cloudrun/env.*.yaml
+!deploy/cloudrun/env.example.yaml

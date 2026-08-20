@@ -1,0 +1,29 @@
+# What `gcloud run deploy --source .` / `gcloud builds submit` uploads to
+# Cloud Build. Without this file gcloud infers exclusions from .gitignore;
+# being explicit keeps secrets and local state off the wire.
+#
+# Cloud Build needs Dockerfile and .dockerignore, so they are NOT listed here —
+# .dockerignore then decides what actually enters the image.
+
+.gcloudignore
+.git
+.gitignore
+.github
+.husky
+.claude
+.vscode
+.idea
+
+# Secrets — never upload any env file except the placeholder example.
+.env*
+!.env.example
+
+# Regenerated during the build
+node_modules
+dist
+generated
+coverage
+*.log
+
+# Local runtime state
+uploads

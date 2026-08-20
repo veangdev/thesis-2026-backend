@@ -1,14 +1,31 @@
+# ── Build artefacts (regenerated inside the image) ──
 node_modules
 dist
 generated
 coverage
-.env
-.env.local
+*.log
+
+# ── Secrets — broad on purpose. The builder stage runs `COPY . .`, so any
+# env file not matched here is baked into the image layers. Only the
+# placeholder-only example is allowed through.
+.env*
+!.env.example
+
+# ── VCS / tooling ──
 .git
 .gitignore
 .github
 .husky
+.claude
+.vscode
+.idea
+
+# ── Not needed at runtime ──
+test
+docs
+uploads
 README.md
-*.log
 Dockerfile
 docker-compose.yml
+.dockerignore
+.gcloudignore
